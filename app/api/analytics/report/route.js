@@ -294,7 +294,143 @@ export async function GET(req) {
       });
     }
 
-    // 3. [Report 3: 제형 & 복합 배합 인텔리전스]
+    // 3. [Report 3: 3-Pane 드릴다운 - 소재별 제조사 목록 + 품목별 10개년 데이터]
+    if (type === 'drilldown') {
+      if (!ingredientId) {
+        return NextResponse.json({ success: false, error: 'ingredientId가 필요합니다.' }, { status: 400 });
+      }
+
+      const targetIngredient = await prisma.individual_raw_materials.findUnique({
+        where: { id: parseInt(ingredientId, 10) }
+      });
+
+      if (!targetIngredient) {
+        return NextResponse.json({ success: false, error: '원료를 찾을 수 없습니다.' }, { status: 404 });
+      }
+
+      const cleanName = (targetIngredient.name || '').replace(/\([^)]*\)/g, '').trim();
+      const rawKeywords = [cleanName, targetIngredient.name].filter(k => k && k.length >= 2);
+
+      // 해당 원료 함유 완제품 전체 조회
+      const matchedDeclarations = await prisma.declarations.findMany({
+        where: {
+          OR: rawKeywords.flatMap(kw => [
+            { indvRawmtrlNm: { contains: kw, mode: 'insensitive' } },
+            { rawmtrlNm: { contains: kw, mode: 'insensitive' } },
+            { prdlstNm: { contains: kw, mode: 'insensitive' } },
+            { primaryFnclty: { contains: kw, mode: 'insensitive' } }
+          ])
+        },
+        select: {
+          prdlstReportNo: true,
+          prdlstNm: true,
+          bsshNm: true,
+          dispos: true,
+          prmsDt: true,
+          primaryFnclty: true
+        }
+      });
+
+      const reportNos = Array.from(new Set(matchedDeclarations.map(d => d.prdlstReportNo))).filter(Boolean);
+
+      const productionRecords = reportNos.length > 0 ? await prisma.production_stats.findMany({
+        where: { prdlstReportNo: { in: reportNos } },
+        select: {
+          prdlstReportNo: true,
+          bsshNm: true,
+          evlYr: true,
+          prdctnQy: true
+        }
+      }) : [];
+
+      const YEARS = ['2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025'];
+
+      // 제조사별 통계 집계 (선언 기반 품목 수 + 생산실적 기반 생산량)
+      const companyMap = {};
+      matchedDeclarations.forEach(d => {
+        const comp = d.bsshNm || '기타';
+        if (!companyMap[comp]) {
+          companyMap[comp] = { name: comp, total: 0, yearly: {}, products: new Set() };
+        }
+        companyMap[comp].products.add(d.prdlstReportNo);
+      });
+      productionRecords.forEach(r => {
+        const comp = r.bsshNm || '기타';
+        if (!companyMap[comp]) {
+          companyMap[comp] = { name: comp, total: 0, yearly: {}, products: new Set() };
+        }
+        companyMap[comp].total += (r.prdctnQy || 0);
+        companyMap[comp].yearly[r.evlYr] = (companyMap[comp].yearly[r.evlYr] || 0) + (r.prdctnQy || 0);
+      });
+
+      const totalAllYears = productionRecords.reduce((acc, r) => acc + (r.prdctnQy || 0), 0);
+      const companies = Object.values(companyMap).map(c => ({
+        name: c.name,
+        total: Math.round(c.total * 100) / 100,
+        yearly: c.yearly,
+        productCount: c.products.size,
+        share: totalAllYears > 0 ? Math.round((c.total / totalAllYears) * 1000) / 10 : 0
+      })).sort((a, b) => b.total - a.total);
+
+      // 10개년 연도별 총 생산량
+      const yearlyProduction = YEARS.map(yr => {
+        const total = productionRecords.filter(r => r.evlYr === yr).reduce((acc, cur) => acc + (cur.prdctnQy || 0), 0);
+        return { year: yr, amount: Math.round(total * 100) / 100 };
+      });
+
+      const totalProdAll = yearlyProduction.reduce((acc, cur) => acc + cur.amount, 0);
+
+      // CAGR 계산
+      const firstValid = yearlyProduction.find(y => y.amount > 0);
+      const lastValid = [...yearlyProduction].reverse().find(y => y.amount > 0);
+      let cagr = 0;
+      if (firstValid && lastValid && firstValid.year !== lastValid.year && firstValid.amount > 0) {
+        const yearsDiff = parseInt(lastValid.year) - parseInt(firstValid.year);
+        cagr = Math.round((Math.pow(lastValid.amount / firstValid.amount, 1 / yearsDiff) - 1) * 1000) / 10;
+      }
+
+      // 완제품 매트릭스 구성
+      const productMap = {};
+      matchedDeclarations.forEach(d => {
+        productMap[d.prdlstReportNo] = {
+          prdlstReportNo: d.prdlstReportNo,
+          prdlstNm: d.prdlstNm,
+          bsshNm: d.bsshNm,
+          dispos: d.dispos,
+          prmsDt: d.prmsDt,
+          primaryFnclty: d.primaryFnclty,
+          total: 0,
+          yearly: {}
+        };
+      });
+      productionRecords.forEach(r => {
+        if (productMap[r.prdlstReportNo]) {
+          productMap[r.prdlstReportNo].yearly[r.evlYr] = (productMap[r.prdlstReportNo].yearly[r.evlYr] || 0) + (r.prdctnQy || 0);
+          productMap[r.prdlstReportNo].total += (r.prdctnQy || 0);
+        }
+      });
+
+      const allProducts = Object.values(productMap)
+        .sort((a, b) => b.total - a.total)
+        .map(p => ({ ...p, total: Math.round(p.total * 100) / 100 }));
+
+      return NextResponse.json({
+        success: true,
+        type: 'drilldown',
+        ingredient: targetIngredient,
+        stats: {
+          totalProductsCount: matchedDeclarations.length,
+          activeProductionProducts: reportNos.filter(no => productionRecords.some(r => r.prdlstReportNo === no)).length,
+          totalAllYears: Math.round(totalProdAll * 100) / 100,
+          cagr
+        },
+        companies,
+        yearlyProduction,
+        allProducts
+      });
+    }
+
+    // 4. [Report 4: 제형 & 복합 배합 인텔리전스]
     if (type === 'formulation') {
       const topShapes = await prisma.declarations.groupBy({
         by: ['prdtShapCdNm'],
