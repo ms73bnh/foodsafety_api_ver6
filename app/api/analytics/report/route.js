@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { CATEGORIES_MASTER } from '@/lib/category_data';
 
@@ -42,12 +42,12 @@ export async function GET(req) {
           where: {
             OR: [
               { name: { contains: search, mode: 'insensitive' } },
-              { recognitionNumber: { contains: search, mode: 'insensitive' } }
+              { recognitionNumber: { contains: search, mode: 'insensitive' } },
+              { company: { contains: search, mode: 'insensitive' } }
             ]
           }
         });
       } else {
-        // 기본 1위 샘플 (루테인, 쏘팔메토, 홍경천 등 또는 첫번째)
         targetIngredient = await prisma.individual_raw_materials.findFirst({
           where: { name: { not: null } },
           orderBy: { id: 'desc' }
@@ -98,7 +98,7 @@ export async function GET(req) {
         }
       }) : [];
 
-      // 1-1. 연도별 생산량 합계 추이 (2016 ~ 2025)
+      // 1-1. 10개년 연도별 생산량 합계 추이 (2016 ~ 2025)
       const YEARS = ['2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025'];
       const yearlyProduction = YEARS.map(yr => {
         const total = productionRecords
@@ -109,7 +109,7 @@ export async function GET(req) {
 
       const totalAllYears = yearlyProduction.reduce((acc, cur) => acc + cur.amount, 0);
 
-      // CAGR 계산 (2020 vs 2025 등 데이터 있는 구간)
+      // CAGR 계산
       const firstValid = yearlyProduction.find(y => y.amount > 0);
       const lastValid = [...yearlyProduction].reverse().find(y => y.amount > 0);
       let cagr = 0;
@@ -133,7 +133,7 @@ export async function GET(req) {
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 5);
 
-      // 1-3. 완제품 품목별 생산실적 매트릭스 (상위 15개)
+      // 1-3. 완제품 품목별 생산실적 매트릭스 (10개년 전체 포함)
       const productMap = {};
       matchedDeclarations.forEach(d => {
         productMap[d.prdlstReportNo] = {
@@ -156,7 +156,7 @@ export async function GET(req) {
 
       const topProducts = Object.values(productMap)
         .sort((a, b) => b.total - a.total)
-        .slice(0, 20)
+        .slice(0, 50)
         .map(p => ({
           ...p,
           total: Math.round(p.total * 100) / 100
@@ -178,37 +178,49 @@ export async function GET(req) {
       });
     }
 
-    // 2. [Report 2: 기능성 카테고리별 생산실적 트렌드 & 성장률 매트릭스]
-    if (type === 'category') {
-      const selectedCat = categoryName || '체지방감소';
-      const catInfo = CATEGORIES_MASTER.find(c => c.name === selectedCat) || CATEGORIES_MASTER[0];
-
-      // 카테고리 키워드로 완제품 품목 및 개별원료 매칭
+    // 2. [Report 2: 소재 & 품목 인텔리전스 (심층 분석)]
+    if (type === 'insight' || type === 'category') {
+      const keyword = search || categoryName || '루바브';
+      
+      // 관련 개별인정원료 조회
       const matchedIngredients = await prisma.individual_raw_materials.findMany({
         where: {
           OR: [
-            { categories: { contains: catInfo.name, mode: 'insensitive' } },
-            ...catInfo.keywords.map(kw => ({ functionalityText: { contains: kw, mode: 'insensitive' } }))
+            { name: { contains: keyword, mode: 'insensitive' } },
+            { recognitionNumber: { contains: keyword, mode: 'insensitive' } },
+            { company: { contains: keyword, mode: 'insensitive' } },
+            { functionalityText: { contains: keyword, mode: 'insensitive' } },
+            { categories: { contains: keyword, mode: 'insensitive' } }
           ]
         },
-        select: { id: true, name: true, recognitionNumber: true, company: true, functionalityText: true }
+        select: { id: true, name: true, recognitionNumber: true, company: true, registeredDate: true, functionalityText: true, dailyIntake: true },
+        take: 15
       });
 
-      // 해당 기능성 완제품 조회 (declarations)
+      // 관련 완제품 조회 (declarations)
       const matchedProducts = await prisma.declarations.findMany({
         where: {
           OR: [
-            ...catInfo.keywords.map(kw => ({ primaryFnclty: { contains: kw, mode: 'insensitive' } })),
-            ...catInfo.keywords.map(kw => ({ normalizedFunctionality: { contains: kw, mode: 'insensitive' } }))
+            { indvRawmtrlNm: { contains: keyword, mode: 'insensitive' } },
+            { rawmtrlNm: { contains: keyword, mode: 'insensitive' } },
+            { prdlstNm: { contains: keyword, mode: 'insensitive' } },
+            { primaryFnclty: { contains: keyword, mode: 'insensitive' } }
           ]
         },
-        select: { prdlstReportNo: true, prdlstNm: true, bsshNm: true, dispos: true, prmsDt: true },
-        take: 300
+        select: {
+          prdlstReportNo: true,
+          prdlstNm: true,
+          bsshNm: true,
+          dispos: true,
+          prmsDt: true,
+          primaryFnclty: true
+        },
+        take: 200
       });
 
       const reportNos = matchedProducts.map(p => p.prdlstReportNo).filter(Boolean);
 
-      // 생산실적
+      // 생산실적 데이터 조회
       const productions = reportNos.length > 0 ? await prisma.production_stats.findMany({
         where: { prdlstReportNo: { in: reportNos } },
         select: { prdlstReportNo: true, evlYr: true, prdctnQy: true, bsshNm: true }
@@ -220,30 +232,65 @@ export async function GET(req) {
         return { year: yr, amount: Math.round(amount * 100) / 100 };
       });
 
-      // 제조사 랭킹
+      // 제조사 랭킹 & 점유율
       const compMap = {};
       productions.forEach(p => {
         const c = p.bsshNm || '기타';
         compMap[c] = (compMap[c] || 0) + (p.prdctnQy || 0);
       });
+      const totalAmount = yearlyTrend.reduce((acc, c) => acc + c.amount, 0);
       const topCompanies = Object.entries(compMap)
-        .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 }))
+        .map(([name, amount]) => ({
+          name,
+          amount: Math.round(amount * 100) / 100,
+          share: totalAmount > 0 ? Math.round((amount / totalAmount) * 1000) / 10 : 0
+        }))
         .sort((a, b) => b.amount - a.amount)
-        .slice(0, 6);
+        .slice(0, 8);
+
+      // 완제품 매트릭스 (10개년 생산량 결합)
+      const productMap = {};
+      matchedProducts.forEach(d => {
+        productMap[d.prdlstReportNo] = {
+          prdlstReportNo: d.prdlstReportNo,
+          prdlstNm: d.prdlstNm,
+          bsshNm: d.bsshNm,
+          dispos: d.dispos,
+          prmsDt: d.prmsDt,
+          primaryFnclty: d.primaryFnclty,
+          total: 0,
+          yearly: {}
+        };
+      });
+
+      productions.forEach(r => {
+        if (productMap[r.prdlstReportNo]) {
+          productMap[r.prdlstReportNo].yearly[r.evlYr] = (productMap[r.prdlstReportNo].yearly[r.evlYr] || 0) + (r.prdctnQy || 0);
+          productMap[r.prdlstReportNo].total += (r.prdctnQy || 0);
+        }
+      });
+
+      const productList = Object.values(productMap)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 50)
+        .map(p => ({
+          ...p,
+          total: Math.round(p.total * 100) / 100
+        }));
 
       return NextResponse.json({
         success: true,
-        type: 'category',
-        category: catInfo,
-        allCategories: CATEGORIES_MASTER.map(c => ({ name: c.name, description: c.description })),
+        type: 'insight',
+        keyword,
         stats: {
           ingredientCount: matchedIngredients.length,
           productCount: matchedProducts.length,
-          totalAmount: Math.round(yearlyTrend.reduce((acc, c) => acc + c.amount, 0) * 100) / 100
+          totalAmount: Math.round(totalAmount * 100) / 100
         },
         yearlyTrend,
-        matchedIngredients: matchedIngredients.slice(0, 15),
-        topCompanies
+        matchedIngredients,
+        topCompanies,
+        productList
       });
     }
 
