@@ -134,6 +134,52 @@ model production_stats {
   @@index([bsshNm])
   @@index([prdlstNm])
   @@index([evlYr])
+  @@index([evlYr, prdctnQy(sort: Desc)])
+  @@index([evlYr, bsshNm])
+  @@index([evlYr, hItemNm])
+}
+
+// Q&A 문의 게시판 (qna_post)
+model qna_post {
+  id            Int       @id @default(autoincrement())
+  title         String    // 문의 제목
+  content       String    // 문의 내용
+  category      String    @default("일반문의") // 일반문의, 데이터수정요청, 시스템오류, 기타
+  authorName    String    // 작성자 이름
+  authorCompany String?   // 회사명
+  authorId      Int?      // 회원 ID (로그인 사용자)
+  isSecret      Boolean   @default(false) // 비밀글 여부
+  password      String?   // 비밀글/비회원 비밀번호
+  answer        String?   // 관리자 답변 내용
+  answeredAt    DateTime? // 답변 일시
+  answeredBy    String?   // 답변자 이름
+  isAnswered    Boolean   @default(false) // 답변 완료 여부
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([createdAt])
+  @@index([isAnswered])
+  @@index([category])
+}
+
+// 기능성 평가 가이드라인 게시판 (functional_guidelines)
+model functional_guidelines {
+  id             Int       @id @default(autoincrement())
+  no             String?   // 게시글 번호
+  title          String    // 제목
+  dept           String?   // 작성부서
+  regDate        String?   // 등록일
+  viewCnt        String?   // 조회수
+  content        String?   // 본문 내용
+  attachmentName String?   // 첨부파일명
+  attachmentUrl  String?   // 첨부파일 다운로드 URL
+  localPdfPath   String?   // 로컬 저장 PDF 상대 경로
+  detailUrl      String?   // 원문 상세 URL
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([title])
+  @@index([regDate])
 }
 
 // 사용자 관리 테이블

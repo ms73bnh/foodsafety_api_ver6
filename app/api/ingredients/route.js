@@ -59,11 +59,17 @@ export async function GET(req) {
       };
     }
 
+    const sortBy = searchParams.get('sortBy') || 'registeredDate';
+    const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
+
+    const validSortFields = ['registeredDate', 'recognitionNumber', 'name', 'company', 'categories'];
+    const orderField = validSortFields.includes(sortBy) ? sortBy : 'registeredDate';
+
     const total = await prisma.individual_raw_materials.count({ where });
     const data = await prisma.individual_raw_materials.findMany({
       where,
       orderBy: [
-        { registeredDate: 'desc' },
+        { [orderField]: sortOrder },
         { id: 'desc' }
       ],
       skip,

@@ -83,9 +83,13 @@ export async function GET(req) {
     const where = buildWhere(params);
 
     let orderBy;
-    if (params.sort === 'prmsDt_asc')      orderBy = { prmsDt: 'asc' };
-    else if (params.sort === 'recent')     orderBy = { createdAt: 'desc' };
-    else                                   orderBy = { prmsDt: 'desc' };
+    if (params.sort === 'prmsDt_asc') {
+      orderBy = [{ prmsDt: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }];
+    } else if (params.sort === 'recent') {
+      orderBy = [{ createdAt: 'desc' }, { id: 'desc' }];
+    } else {
+      orderBy = [{ prmsDt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }];
+    }
 
     // ── 데이터 조회 (take+1로 다음 페이지 존재 여부 확인) ──────
     const hasFilter = Object.values({

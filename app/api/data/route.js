@@ -79,14 +79,17 @@ export async function GET(req) {
     if (bsshNm) conditions.push({ bsshNm: { contains: bsshNm, mode: 'insensitive' } });
     if (prdlstNm) conditions.push({ prdlstNm: { contains: prdlstNm, mode: 'insensitive' } });
     
-    // 제형(제품형태) 전용 필터: 요청에 따라 포장재질 제외하고 제형 관련 필드만 검색 (정확한 일치 검색)
+    // 제형(제품형태) 전용 필터: 복수 선택(쉼표 구분) 지원 및 OR 검색
     if (dispos) {
-      conditions.push({
-        OR: [
-          { dispos: { equals: dispos } },
-          { prdtShapCdNm: { equals: dispos } }
-        ]
-      });
+      const disposList = dispos.split(',').map(d => d.trim()).filter(Boolean);
+      if (disposList.length > 0) {
+        conditions.push({
+          OR: disposList.flatMap(d => [
+            { dispos: { contains: d, mode: 'insensitive' } },
+            { prdtShapCdNm: { contains: d, mode: 'insensitive' } }
+          ])
+        });
+      }
     }
     
     if (normalizedFunctionality) {

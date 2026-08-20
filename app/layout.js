@@ -2,7 +2,6 @@ import Navbar from '@/components/Navbar';
 import AlertSidebar from '@/components/AlertSidebar';
 import NoticePopup from '@/components/NoticePopup';
 import PendingApprovalBadge from '@/components/PendingApprovalBadge';
-import EasterEgg from '@/components/EasterEgg';
 import FloatingClock from '@/components/FloatingClock';
 import { ToastProvider } from '@/components/ToastProvider';
 import './globals.css';
@@ -26,7 +25,6 @@ export default function RootLayout({ children }) {
           <AlertSidebar />
           <NoticePopup />
           <PendingApprovalBadge />
-          <EasterEgg />
           <FloatingClock />
         </ToastProvider>
       </body>

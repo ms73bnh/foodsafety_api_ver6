@@ -52,19 +52,33 @@ async function run() {
         const name = parts[2];
         const company = parts[3];
         const functionalityText = parts[4];
-        let recognitionNumber = parts[5];
+        let rawRecNo = parts[5];
 
         if (!name || name === '원료명') continue;
 
-        // 고유 식별자 처리
-        let isTempNumber = false;
-        if (!recognitionNumber || recognitionNumber === '-' || recognitionNumber === '') {
-          // 인정번호가 없는 경우 고유한 임시 번호 생성
-          recognitionNumber = `AUTO-${registeredYear}-${name.replace(/\s+/g, '')}-${company.replace(/\s+/g, '')}`;
-          isTempNumber = true;
+        // 괄호 안의 날짜 추출 및 포맷팅 (예: "(2023.5.8.)" -> "2023.05.08")
+        let parsedDate = registeredYear;
+        const dateMatch = rawRecNo.match(/\(([\d\.\s-]+)\)/);
+        if (dateMatch) {
+          const dateParts = dateMatch[1].replace(/[^0-9.]/g, '').split('.').filter(Boolean);
+          if (dateParts.length === 3) {
+            parsedDate = `${dateParts[0]}.${String(dateParts[1]).padStart(2, '0')}.${String(dateParts[2]).padStart(2, '0')}`;
+          } else if (dateParts.length === 2) {
+            parsedDate = `${dateParts[0]}.${String(dateParts[1]).padStart(2, '0')}`;
+          } else if (dateParts.length === 1 && dateParts[0].length === 4) {
+            parsedDate = dateParts[0];
+          }
         }
 
-        const key = recognitionNumber;
+        // 인정번호에서 괄호 날짜 제거하여 순수 인정번호만 추출 (예: "제2023-11호(2023.5.8.)" -> "제2023-11호")
+        let cleanRecNo = rawRecNo.replace(/\(([\d\.\s-]+)\)/g, '').trim();
+
+        // 고유 식별자 처리
+        if (!cleanRecNo || cleanRecNo === '-' || cleanRecNo === '') {
+          cleanRecNo = `AUTO-${registeredYear}-${name.replace(/\s+/g, '')}-${company.replace(/\s+/g, '')}`;
+        }
+
+        const key = cleanRecNo;
 
         if (rawMaterialsMap.has(key)) {
           // 이미 존재하면 카테고리 추가
@@ -82,16 +96,20 @@ async function run() {
                 : functionalityText;
             }
           }
+          // 더 구체적인 날짜가 있으면 갱신
+          if (parsedDate.length > existing.registeredDate.length) {
+            existing.registeredDate = parsedDate;
+          }
         } else {
           // 새로 추가
           rawMaterialsMap.set(key, {
-            recognitionNumber,
+            recognitionNumber: cleanRecNo,
             name,
             company: (company === '-') ? '' : company,
             functionalityText: (functionalityText === '-') ? '' : functionalityText,
             dailyIntake: '',
             precautions: '',
-            registeredDate: registeredYear,
+            registeredDate: parsedDate,
             detailContent: '',
             categories: currentCategory || ''
           });
@@ -101,6 +119,9 @@ async function run() {
   }
 
   console.log(`파싱 완료: 총 ${rawMaterialsMap.size}개의 고유 개별인정형 원료 추출`);
+
+  // DB 기존 데이터 삭제 후 클린 인서트
+  await prisma.individual_raw_materials.deleteMany({});
 
   // DB에 적재
   let count = 0;

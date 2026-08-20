@@ -44,12 +44,15 @@ export async function GET(req) {
     if (bsshNm) conditions.push({ bsshNm: { contains: bsshNm, mode: 'insensitive' } });
     if (prdlstNm) conditions.push({ prdlstNm: { contains: prdlstNm, mode: 'insensitive' } });
     if (dispos) {
-      conditions.push({
-        OR: [
-          { dispos: { equals: dispos } },
-          { prdtShapCdNm: { equals: dispos } }
-        ]
-      });
+      const disposList = dispos.split(',').map(d => d.trim()).filter(Boolean);
+      if (disposList.length > 0) {
+        conditions.push({
+          OR: disposList.flatMap(d => [
+            { dispos: { contains: d, mode: 'insensitive' } },
+            { prdtShapCdNm: { contains: d, mode: 'insensitive' } }
+          ])
+        });
+      }
     }
     if (normalizedFunctionality) {
       const keywords = normalizedFunctionality.split(',').map(kw => kw.trim()).filter(kw => kw !== '');

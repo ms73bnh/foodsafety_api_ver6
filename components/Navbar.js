@@ -178,7 +178,7 @@ export default function Navbar() {
             <Link href="/companies/compare" className={`navbar-item ${pathname === '/companies/compare' ? 'active' : ''}`} style={{ color: 'var(--accent)' }}><i className="fa-solid fa-code-compare" style={{ marginRight: '6px' }}></i>업체 상호 비교</Link>
             <Link href="/production" className={`navbar-item ${pathname === '/production' ? 'active' : ''}`} style={{ color: '#0d9488' }}><i className="fa-solid fa-boxes-stacked" style={{ marginRight: '6px' }}></i>생산 실적 분석</Link>
             <div className="navbar-dropdown-container">
-              <span className={`navbar-item dropdown-trigger ${pathname === '/categories' || pathname === '/ingredients' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+              <span className={`navbar-item dropdown-trigger ${pathname === '/categories' || pathname === '/ingredients' || pathname === '/guidelines' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
                 <i className="fa-solid fa-flask" style={{ marginRight: '6px' }}></i>개별인정형<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
               </span>
               <div className="navbar-dropdown-menu">
@@ -188,8 +188,14 @@ export default function Navbar() {
                 <Link href="/ingredients" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
                   <i className="fa-solid fa-flask" style={{ marginRight: '6px', color: '#0d9488' }}></i>개별인정원료
                 </Link>
+                <Link href="/guidelines" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
+                  <i className="fa-solid fa-book-bookmark" style={{ marginRight: '6px', color: '#0284c7' }}></i>기능성 평가 가이드라인
+                </Link>
               </div>
             </div>
+            <Link href="/qna" className={`navbar-item ${pathname === '/qna' ? 'active' : ''}`}>
+              <i className="fa-solid fa-comments" style={{ marginRight: '6px', color: '#0284c7' }}></i>Q&A
+            </Link>
             {isAdminUser && (
               <Link href="/manage" className={`navbar-item ${pathname === '/manage' ? 'active' : ''}`} style={{ fontWeight: 'bold', background: 'rgba(2, 132, 199, 0.06)' }}>
                 <i className="fa-solid fa-database" style={{ marginRight: '6px' }}></i>시스템 관리

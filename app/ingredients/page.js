@@ -47,6 +47,9 @@ export default function IngredientsPage() {
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [relatedTotal, setRelatedTotal] = useState(0);
 
+  const [sortBy, setSortBy] = useState('registeredDate');
+  const [sortOrder, setSortOrder] = useState('desc');
+
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // 300ms 디바운스 적용
@@ -64,7 +67,9 @@ export default function IngredientsPage() {
         page: p.toString(), 
         limit: limit.toString(), 
         search: debouncedSearch, 
-        category 
+        category,
+        sortBy,
+        sortOrder
       });
       const res = await fetch(`/api/ingredients?${params}`);
       const json = await res.json();
@@ -76,9 +81,27 @@ export default function IngredientsPage() {
       }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [debouncedSearch, category, limit]);
+  }, [debouncedSearch, category, limit, sortBy, sortOrder]);
 
-  useEffect(() => { fetchData(1); }, [debouncedSearch, category]);
+  useEffect(() => { fetchData(1); }, [fetchData]);
+
+  const handleSort = (field) => {
+    if (sortBy === field) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('desc');
+    }
+  };
+
+  const renderSortIcon = (field) => {
+    if (sortBy !== field) {
+      return <i className="fas fa-sort" style={{ marginLeft: 4, color: '#cbd5e1', fontSize: '0.7rem' }} />;
+    }
+    return sortOrder === 'asc' 
+      ? <i className="fas fa-sort-up" style={{ marginLeft: 4, color: '#0284c7', fontSize: '0.75rem' }} />
+      : <i className="fas fa-sort-down" style={{ marginLeft: 4, color: '#0284c7', fontSize: '0.75rem' }} />;
+  };
 
   const openCreate = () => { setForm(EMPTY_FORM); setError(''); setModal('create'); };
   const openEdit = (item) => { setSelected(item); setForm({ ...item }); setError(''); setModal('edit'); };
@@ -201,9 +224,27 @@ export default function IngredientsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['등록연도/일자', '인정번호', '원료명', '업체명', '기능성 카테고리', '기능성 내용', '관리'].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
+                <th onClick={() => handleSort('registeredDate')} style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                  등록연도/일자 {renderSortIcon('registeredDate')}
+                </th>
+                <th onClick={() => handleSort('recognitionNumber')} style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                  인정번호 {renderSortIcon('recognitionNumber')}
+                </th>
+                <th onClick={() => handleSort('name')} style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                  원료명 {renderSortIcon('name')}
+                </th>
+                <th onClick={() => handleSort('company')} style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                  업체명 {renderSortIcon('company')}
+                </th>
+                <th style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                  기능성 카테고리
+                </th>
+                <th style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                  기능성 내용
+                </th>
+                <th style={{ padding: '10px 14px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                  관리
+                </th>
               </tr>
             </thead>
             <tbody>
