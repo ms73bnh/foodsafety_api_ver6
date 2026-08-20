@@ -41,6 +41,8 @@ export default function ProductionListPage() {
       const queryParams = new URLSearchParams();
       queryParams.append('page', page);
       queryParams.append('limit', limit);
+      queryParams.append('sortKey', sortConfig.key);
+      queryParams.append('sortOrder', sortConfig.direction);
       if (searchQuery) queryParams.append('query', searchQuery);
       if (hItemNm) queryParams.append('hItemNm', hItemNm);
       
@@ -55,29 +57,6 @@ export default function ProductionListPage() {
           return { ...p, total };
         });
 
-        // 현재 선택된 정렬 기준 적용
-        const { key, direction } = sortConfig;
-        processed.sort((a, b) => {
-          let valA, valB;
-          if (key === 'total') {
-            valA = Number(a.total || 0);
-            valB = Number(b.total || 0);
-            return direction === 'asc' ? valA - valB : valB - valA;
-          } else if (key === 'prdlstNm') {
-            valA = a.prdlstNm || '';
-            valB = b.prdlstNm || '';
-            return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-          } else if (key === 'bsshNm') {
-            valA = a.bsshNm || '';
-            valB = b.bsshNm || '';
-            return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-          } else {
-            valA = Number(a.yearly?.[key] || 0);
-            valB = Number(b.yearly?.[key] || 0);
-            return direction === 'asc' ? valA - valB : valB - valA;
-          }
-        });
-
         setData(processed);
         setTotal(json.totalCount || 0);
       }
@@ -90,7 +69,7 @@ export default function ProductionListPage() {
 
   useEffect(() => {
     fetchData();
-  }, [page]);
+  }, [page, sortConfig]);
 
   const handleSearch = (e) => {
     if (e.key === 'Enter') {
@@ -99,32 +78,11 @@ export default function ProductionListPage() {
     }
   };
 
-  // 정렬 함수
+  // 정렬 함수 (서버 사이드 정렬 트리거)
   const handleSort = (key) => {
     const direction = sortConfig.key === key && sortConfig.direction === 'desc' ? 'asc' : 'desc';
     setSortConfig({ key, direction });
-
-    const sortedData = [...data].sort((a, b) => {
-      let valA, valB;
-      if (key === 'total') {
-        valA = Number(a.total || 0);
-        valB = Number(b.total || 0);
-        return direction === 'asc' ? valA - valB : valB - valA;
-      } else if (key === 'prdlstNm') {
-        valA = a.prdlstNm || '';
-        valB = b.prdlstNm || '';
-        return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      } else if (key === 'bsshNm') {
-        valA = a.bsshNm || '';
-        valB = b.bsshNm || '';
-        return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      } else {
-        valA = Number(a.yearly?.[key] || 0);
-        valB = Number(b.yearly?.[key] || 0);
-        return direction === 'asc' ? valA - valB : valB - valA;
-      }
-    });
-    setData(sortedData);
+    setPage(1);
   };
 
   const years = Array.from({ length: 2025 - 2016 + 1 }, (_, i) => 2016 + i).reverse();
@@ -211,7 +169,7 @@ export default function ProductionListPage() {
       <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
         <div style={{ padding: '12px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>총 <span style={{ color: 'var(--accent)' }}>{total.toLocaleString()}</span>건의 품목</div>
-          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>* 헤더 클릭 시 현재 페이지 정렬 가능 / 생산량 단위: KG</span>
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>* 헤더 클릭 시 전체 데이터 정렬 가능 / 생산량 단위: KG</span>
         </div>
         <div className="table-container" style={{ border: 'none', borderRadius: 0, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1300px' }}>

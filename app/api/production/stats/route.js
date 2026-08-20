@@ -131,44 +131,147 @@ export async function GET(req) {
     const topGrowingCategories = categoryGrowth.slice(0, 5);
     const topShrinkingCategories = [...categoryGrowth].sort((a, b) => a.diff - b.diff).slice(0, 5);
 
-    // 3. 매트릭스 목록 데이터 (페이징 지원 - 대시보드 리스트용)
-    const distinctProducts = await prisma.production_stats.findMany({
-      where: whereClause,
-      distinct: ['prdlstReportNo'],
-      select: {
-        prdlstReportNo: true,
-        prdlstNm: true,
-        bsshNm: true,
-        hItemNm: true
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { prdlstNm: 'asc' }
-    });
+    const sortKey = searchParams.get('sortKey') || 'total';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
 
-    const totalCount = 46075; // 대략적인 품목 수
+    // 3. 매트릭스 목록 데이터 (페이징 & 정렬 지원)
+    let orderedProducts = [];
+    let reportNos = [];
+    let totalCount = 0;
+
+    const isYearSort = ['2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025'].includes(String(sortKey));
+
+    if (sortKey === 'total') {
+      // 1) 총 합계 기준 정렬
+      const totalCountGroups = await prisma.production_stats.groupBy({
+        by: ['prdlstReportNo'],
+        where: whereClause
+      });
+      totalCount = totalCountGroups.length;
+
+      const groupedProducts = await prisma.production_stats.groupBy({
+        by: ['prdlstReportNo'],
+        where: whereClause,
+        _sum: { prdctnQy: true },
+        orderBy: {
+          _sum: {
+            prdctnQy: sortOrder === 'asc' ? 'asc' : 'desc'
+          }
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+      });
+
+      reportNos = groupedProducts.map(g => g.prdlstReportNo);
+
+      if (reportNos.length > 0) {
+        const productDetails = await prisma.production_stats.findMany({
+          where: { prdlstReportNo: { in: reportNos } },
+          distinct: ['prdlstReportNo'],
+          select: {
+            prdlstReportNo: true,
+            prdlstNm: true,
+            bsshNm: true,
+            hItemNm: true
+          }
+        });
+        const detailsMap = new Map(productDetails.map(p => [p.prdlstReportNo, p]));
+        orderedProducts = reportNos.map(no => detailsMap.get(no) || { prdlstReportNo: no, prdlstNm: '', bsshNm: '', hItemNm: '' });
+      }
+    } else if (isYearSort) {
+      // 2) 특정 연도 생산량 기준 정렬
+      totalCount = await prisma.production_stats.count({
+        where: { ...whereClause, evlYr: String(sortKey) }
+      });
+
+      const yearlyProducts = await prisma.production_stats.findMany({
+        where: { ...whereClause, evlYr: String(sortKey) },
+        orderBy: { prdctnQy: sortOrder === 'asc' ? 'asc' : 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          prdlstReportNo: true,
+          prdlstNm: true,
+          bsshNm: true,
+          hItemNm: true
+        }
+      });
+
+      reportNos = yearlyProducts.map(p => p.prdlstReportNo);
+      orderedProducts = yearlyProducts;
+    } else if (sortKey === 'prdlstNm' || sortKey === 'bsshNm') {
+      // 3) 품목명 또는 업체명 기준 정렬
+      const totalCountGroups = await prisma.production_stats.groupBy({
+        by: ['prdlstReportNo'],
+        where: whereClause
+      });
+      totalCount = totalCountGroups.length;
+
+      const distinctProducts = await prisma.production_stats.findMany({
+        where: whereClause,
+        distinct: ['prdlstReportNo'],
+        select: {
+          prdlstReportNo: true,
+          prdlstNm: true,
+          bsshNm: true,
+          hItemNm: true
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { [sortKey]: sortOrder === 'asc' ? 'asc' : 'desc' }
+      });
+
+      reportNos = distinctProducts.map(p => p.prdlstReportNo);
+      orderedProducts = distinctProducts;
+    } else {
+      // 기본 정렬
+      const totalCountGroups = await prisma.production_stats.groupBy({
+        by: ['prdlstReportNo'],
+        where: whereClause
+      });
+      totalCount = totalCountGroups.length;
+
+      const distinctProducts = await prisma.production_stats.findMany({
+        where: whereClause,
+        distinct: ['prdlstReportNo'],
+        select: {
+          prdlstReportNo: true,
+          prdlstNm: true,
+          bsshNm: true,
+          hItemNm: true
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { prdlstNm: 'asc' }
+      });
+
+      reportNos = distinctProducts.map(p => p.prdlstReportNo);
+      orderedProducts = distinctProducts;
+    }
 
     // 선택된 품목들에 대한 모든 연도 실적 가져오기
-    const matrixReportNos = distinctProducts.map(p => p.prdlstReportNo);
-    const yearlyRawData = await prisma.production_stats.findMany({
-      where: {
-        prdlstReportNo: { in: matrixReportNos }
-      },
-      select: {
-        prdlstReportNo: true,
-        evlYr: true,
-        prdctnQy: true
-      }
-    });
-
-    // 데이터 가공 (Pivot)
-    const matrixData = distinctProducts.map(p => {
-      const yearly = {};
-      yearlyRawData.filter(d => d.prdlstReportNo === p.prdlstReportNo).forEach(d => {
-        yearly[d.evlYr] = d.prdctnQy;
+    let matrixData = [];
+    if (reportNos.length > 0) {
+      const yearlyRawData = await prisma.production_stats.findMany({
+        where: {
+          prdlstReportNo: { in: reportNos }
+        },
+        select: {
+          prdlstReportNo: true,
+          evlYr: true,
+          prdctnQy: true
+        }
       });
-      return { ...p, yearly };
-    });
+
+      // 데이터 가공 (Pivot)
+      matrixData = orderedProducts.map(p => {
+        const yearly = {};
+        yearlyRawData.filter(d => d.prdlstReportNo === p.prdlstReportNo).forEach(d => {
+          yearly[d.evlYr] = d.prdctnQy;
+        });
+        return { ...p, yearly };
+      });
+    }
 
     return NextResponse.json({
       success: true,
