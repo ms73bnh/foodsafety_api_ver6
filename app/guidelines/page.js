@@ -11,12 +11,17 @@ export default function GuidelinesPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // 정렬 상태
+  const [sortBy, setSortBy] = useState('regDate'); // 'regDate' | 'no' | 'title'
+  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' | 'desc'
 
-  // PDF 미리보기 모달 상태
-  const [previewPdf, setPreviewPdf] = useState(null); // { url, title }
+  // 우측 슬라이드 드로어 PDF 미리보기 상태
+  const [previewItem, setPreviewItem] = useState(null);
 
-  // 상세 보기 모달 상태
-  const [detailItem, setDetailItem] = useState(null);
+  // 동기화 상태
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -31,7 +36,9 @@ export default function GuidelinesPage() {
       const params = new URLSearchParams({
         page: p.toString(),
         limit: limit.toString(),
-        search: debouncedSearch
+        search: debouncedSearch,
+        sortBy,
+        sortOrder
       });
       const res = await fetch(`/api/guidelines?${params}`);
       const json = await res.json();
@@ -45,18 +52,47 @@ export default function GuidelinesPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, limit]);
+  }, [debouncedSearch, limit, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchData(1);
   }, [fetchData]);
+
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('desc');
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (!confirm('식약처 서버에서 최신 기능성 평가 가이드라인을 동기화하시겠습니까?')) return;
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const res = await fetch('/api/guidelines/sync', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setSyncMsg(json.message);
+        fetchData(1);
+      } else {
+        alert(json.error || '동기화에 실패했습니다.');
+      }
+    } catch (e) {
+      alert('동기화 중 오류가 발생했습니다: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const totalPages = Math.ceil(total / limit) || 1;
 
   return (
     <main className="container animate-fade-in" style={{ maxWidth: '1400px', margin: '0 auto', padding: '28px 20px 60px' }}>
       {/* 헤더 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 className="title-gradient" style={{ margin: '0 0 6px', fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <i className="fa-solid fa-book-bookmark" style={{ color: '#0d9488' }}></i> 기능성 평가 가이드라인
@@ -66,36 +102,82 @@ export default function GuidelinesPage() {
           </p>
         </div>
 
-        {/* 검색창 */}
-        <div style={{ position: 'relative', minWidth: '280px' }}>
-          <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.85rem' }}></i>
-          <input
-            type="text"
-            placeholder="가이드라인 제목, 내용 검색..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+        {/* 수동 동기화 및 검색창 */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleManualSync}
+            disabled={syncing}
             style={{
-              width: '100%',
-              padding: '9px 14px 9px 36px',
+              padding: '9px 14px',
+              background: '#0d9488',
+              color: '#fff',
+              border: 'none',
               borderRadius: '8px',
-              border: '1px solid #e2e8f0',
               fontSize: '0.85rem',
-              outline: 'none',
-              background: '#fff'
+              fontWeight: 700,
+              cursor: syncing ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 6px rgba(13, 148, 136, 0.25)'
             }}
-          />
+          >
+            <i className={`fa-solid fa-arrows-rotate ${syncing ? 'fa-spin' : ''}`}></i>
+            {syncing ? '동기화 중...' : '최신 가이드라인 동기화'}
+          </button>
+
+          <div style={{ position: 'relative', minWidth: '260px' }}>
+            <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.85rem' }}></i>
+            <input
+              type="text"
+              placeholder="가이드라인 제목, 내용 검색..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '9px 14px 9px 36px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                fontSize: '0.85rem',
+                outline: 'none',
+                background: '#fff'
+              }}
+            />
+          </div>
         </div>
       </div>
+
+      {syncMsg && (
+        <div style={{ padding: '10px 16px', background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span><i className="fa-solid fa-circle-check" style={{ marginRight: '6px' }}></i>{syncMsg}</span>
+          <button onClick={() => setSyncMsg('')} style={{ background: 'none', border: 'none', color: '#065f46', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
 
       {/* 가이드라인 목록 테이블 */}
       <div className="glass-panel" style={{ padding: '0', borderRadius: '12px', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontWeight: 700 }}>
-              <th style={{ padding: '14px 16px', width: '70px', textAlign: 'center' }}>번호</th>
-              <th style={{ padding: '14px 16px' }}>가이드라인 제목</th>
+              <th
+                onClick={() => handleSort('no')}
+                style={{ padding: '14px 16px', width: '80px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+              >
+                번호 {sortBy === 'no' ? (sortOrder === 'asc' ? '▲' : '▼') : <span style={{ color: '#cbd5e1' }}>↕</span>}
+              </th>
+              <th
+                onClick={() => handleSort('title')}
+                style={{ padding: '14px 16px', cursor: 'pointer', userSelect: 'none' }}
+              >
+                가이드라인 제목 {sortBy === 'title' ? (sortOrder === 'asc' ? '▲' : '▼') : <span style={{ color: '#cbd5e1' }}>↕</span>}
+              </th>
               <th style={{ padding: '14px 16px', width: '120px' }}>작성부서</th>
-              <th style={{ padding: '14px 16px', width: '110px', textAlign: 'center' }}>등록일</th>
+              <th
+                onClick={() => handleSort('regDate')}
+                style={{ padding: '14px 16px', width: '130px', textAlign: 'center', cursor: 'pointer', userSelect: 'none', color: sortBy === 'regDate' ? '#0d9488' : '#475569' }}
+              >
+                등록일 {sortBy === 'regDate' ? (sortOrder === 'asc' ? '▲' : '▼') : <span style={{ color: '#cbd5e1' }}>↕</span>}
+              </th>
               <th style={{ padding: '14px 16px', width: '90px', textAlign: 'center' }}>조회수</th>
               <th style={{ padding: '14px 16px', width: '220px', textAlign: 'center' }}>첨부파일 / 미리보기</th>
             </tr>
@@ -118,18 +200,27 @@ export default function GuidelinesPage() {
               data.map((item) => (
                 <tr
                   key={item.id}
-                  style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  style={{
+                    borderBottom: '1px solid #f1f5f9',
+                    transition: 'background 0.15s',
+                    background: previewItem?.id === item.id ? '#f0fdfa' : 'transparent'
+                  }}
+                  onMouseEnter={e => { if (previewItem?.id !== item.id) e.currentTarget.style.background = '#f8fafc'; }}
+                  onMouseLeave={e => { if (previewItem?.id !== item.id) e.currentTarget.style.background = 'transparent'; }}
                 >
                   <td style={{ padding: '14px 16px', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>
-                    {item.no}
+                    {item.no || item.id}
                   </td>
                   <td style={{ padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span
-                        onClick={() => setDetailItem(item)}
-                        style={{ fontWeight: 600, color: '#0f172a', cursor: 'pointer', hover: { color: '#0d9488' } }}
+                        onClick={() => setPreviewItem(item)}
+                        style={{
+                          fontWeight: 600,
+                          color: previewItem?.id === item.id ? '#0d9488' : '#0f172a',
+                          cursor: 'pointer',
+                          textDecoration: previewItem?.id === item.id ? 'underline' : 'none'
+                        }}
                       >
                         {item.title}
                       </span>
@@ -149,79 +240,54 @@ export default function GuidelinesPage() {
                   <td style={{ padding: '14px 16px', color: '#64748b', fontSize: '0.82rem' }}>
                     {item.dept || '식약처'}
                   </td>
-                  <td style={{ padding: '14px 16px', textAlign: 'center', color: '#64748b', fontSize: '0.82rem' }}>
+                  <td style={{ padding: '14px 16px', textAlign: 'center', color: '#64748b', fontSize: '0.82rem', fontWeight: sortBy === 'regDate' ? 600 : 400 }}>
                     {item.regDate || '-'}
                   </td>
                   <td style={{ padding: '14px 16px', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
                     {item.viewCnt || '-'}
                   </td>
                   <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                    {item.localPdfPath ? (
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                        {/* 미리보기 버튼 */}
-                        <button
-                          onClick={() => setPreviewPdf({ url: item.localPdfPath, title: item.title })}
-                          style={{
-                            padding: '5px 10px',
-                            background: '#e0f2fe',
-                            color: '#0369a1',
-                            border: '1px solid #bae6fd',
-                            borderRadius: '6px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <i className="fa-solid fa-eye"></i> 미리보기
-                        </button>
-                        {/* 다운로드 버튼 */}
-                        <a
-                          href={item.localPdfPath}
-                          download
-                          style={{
-                            padding: '5px 10px',
-                            background: '#f0fdf4',
-                            color: '#15803d',
-                            border: '1px solid #bbf7d0',
-                            borderRadius: '6px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            textDecoration: 'none',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <i className="fa-solid fa-download"></i> 다운로드
-                        </a>
-                      </div>
-                    ) : item.attachmentUrl ? (
-                      <a
-                        href={item.attachmentUrl}
-                        target="_blank"
-                        rel="noreferrer"
+                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                      {/* 미리보기 버튼 */}
+                      <button
+                        onClick={() => setPreviewItem(item)}
                         style={{
                           padding: '5px 10px',
-                          background: '#f1f5f9',
-                          color: '#475569',
-                          border: '1px solid #e2e8f0',
+                          background: previewItem?.id === item.id ? '#0d9488' : '#e0f2fe',
+                          color: previewItem?.id === item.id ? '#fff' : '#0369a1',
+                          border: '1px solid #bae6fd',
                           borderRadius: '6px',
                           fontSize: '0.75rem',
-                          fontWeight: 600,
-                          textDecoration: 'none',
-                          display: 'inline-flex',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
                           alignItems: 'center',
                           gap: '4px'
                         }}
                       >
-                        <i className="fa-solid fa-file-arrow-down"></i> 식약처 다운로드
+                        <i className="fa-solid fa-eye"></i> 미리보기
+                      </button>
+                      {/* 다운로드 버튼 */}
+                      <a
+                        href={`/api/guidelines/pdf/${item.id}?download=true`}
+                        download
+                        style={{
+                          padding: '5px 10px',
+                          background: '#f0fdf4',
+                          color: '#15803d',
+                          border: '1px solid #bbf7d0',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          textDecoration: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <i className="fa-solid fa-download"></i> 다운로드
                       </a>
-                    ) : (
-                      <span style={{ color: '#cbd5e1', fontSize: '0.75rem' }}>첨부 없음</span>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -268,29 +334,71 @@ export default function GuidelinesPage() {
         )}
       </div>
 
-      {/* ─── PDF 미리보기 모달 ─── */}
-      {previewPdf && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(4px)' }} onClick={() => setPreviewPdf(null)} />
-          <div style={{ position: 'relative', width: '92vw', height: '90vh', background: '#fff', borderRadius: '16px', boxShadow: '0 25px 50px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1 }}>
-            {/* 모달 헤더 */}
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <i className="fa-solid fa-file-pdf" style={{ color: '#ef4444', fontSize: '1.2rem' }}></i>
-                <h3 style={{ margin: 0, fontSize: '1rem', color: '#0f172a', fontWeight: 700 }}>
-                  {previewPdf.title}
-                </h3>
+      {/* ─── 우측 슬라이드 드로어 PDF 미리보기 ─── */}
+      {previewItem && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', justifyContent: 'flex-end' }}>
+          {/* 백드롭 */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(15,23,42,0.4)',
+              backdropFilter: 'blur(2px)',
+              transition: 'opacity 0.25s'
+            }}
+            onClick={() => setPreviewItem(null)}
+          />
+          {/* 드로어 컨테이너 */}
+          <div
+            style={{
+              position: 'relative',
+              width: '68vw',
+              maxWidth: '1200px',
+              minWidth: '360px',
+              height: '100vh',
+              background: '#fff',
+              boxShadow: '-10px 0 30px rgba(0,0,0,0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              zIndex: 1,
+              animation: 'slideInRight 0.25s ease-out'
+            }}
+          >
+            {/* 드로어 상단 바 */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #e2e8f0',
+                background: '#f8fafc',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                <i className="fa-solid fa-file-pdf" style={{ color: '#ef4444', fontSize: '1.4rem', flexShrink: 0 }}></i>
+                <div style={{ overflow: 'hidden' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {previewItem.title}
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                    등록일: {previewItem.regDate} · 작성부서: {previewItem.dept}
+                  </p>
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                {/* 다운로드 버튼 */}
                 <a
-                  href={previewPdf.url}
+                  href={`/api/guidelines/pdf/${previewItem.id}?download=true`}
                   download
                   style={{
-                    padding: '6px 12px',
+                    padding: '7px 14px',
                     background: '#0d9488',
                     color: '#fff',
                     borderRadius: '6px',
-                    fontSize: '0.8rem',
+                    fontSize: '0.82rem',
                     fontWeight: 700,
                     textDecoration: 'none',
                     display: 'flex',
@@ -300,36 +408,53 @@ export default function GuidelinesPage() {
                 >
                   <i className="fa-solid fa-download"></i> 다운로드
                 </a>
+                {/* 새 창에서 열기 */}
                 <a
-                  href={previewPdf.url}
+                  href={`/api/guidelines/pdf/${previewItem.id}`}
                   target="_blank"
                   rel="noreferrer"
                   style={{
-                    padding: '6px 12px',
+                    padding: '7px 12px',
                     background: '#f1f5f9',
                     color: '#475569',
                     border: '1px solid #cbd5e1',
                     borderRadius: '6px',
-                    fontSize: '0.8rem',
+                    fontSize: '0.82rem',
                     fontWeight: 600,
-                    textDecoration: 'none'
+                    textDecoration: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
                   }}
                 >
-                  새 탭에서 열기
+                  <i className="fa-solid fa-arrow-up-right-from-square"></i> 새 창
                 </a>
+                {/* 닫기 버튼 */}
                 <button
-                  onClick={() => setPreviewPdf(null)}
-                  style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer', color: '#94a3b8', marginLeft: '6px' }}
+                  onClick={() => setPreviewItem(null)}
+                  style={{
+                    background: '#f1f5f9',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '6px',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.1rem',
+                    cursor: 'pointer',
+                    color: '#64748b'
+                  }}
                 >
                   <i className="fa-solid fa-xmark"></i>
                 </button>
               </div>
             </div>
 
-            {/* 모달 바디: PDF iframe */}
+            {/* 드로어 본문: PDF iframe 뷰어 */}
             <div style={{ flex: 1, width: '100%', background: '#525659' }}>
               <iframe
-                src={previewPdf.url}
+                src={`/api/guidelines/pdf/${previewItem.id}`}
                 width="100%"
                 height="100%"
                 style={{ border: 'none' }}
@@ -339,53 +464,7 @@ export default function GuidelinesPage() {
           </div>
         </div>
       )}
-
-      {/* ─── 상세 보기 모달 ─── */}
-      {detailItem && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)' }} onClick={() => setDetailItem(null)} />
-          <div style={{ position: 'relative', width: '680px', maxWidth: '92vw', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)', zIndex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
-              <div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0d9488' }}>
-                  No. {detailItem.no} · {detailItem.dept}
-                </span>
-                <h3 style={{ margin: '4px 0 0', fontSize: '1.15rem', color: '#0f172a' }}>{detailItem.title}</h3>
-                <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>등록일: {detailItem.regDate} · 조회수: {detailItem.viewCnt}</p>
-              </div>
-              <button onClick={() => setDetailItem(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#94a3b8' }}>
-                <i className="fa-solid fa-xmark"></i>
-              </button>
-            </div>
-
-            <div style={{ maxHeight: '350px', overflowY: 'auto', background: '#f8fafc', padding: '16px', borderRadius: '8px', fontSize: '0.88rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', color: '#334155', marginBottom: '16px' }}>
-              {detailItem.content || '본문 내용이 없습니다.'}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              {detailItem.localPdfPath ? (
-                <button
-                  onClick={() => {
-                    const path = detailItem.localPdfPath;
-                    const title = detailItem.title;
-                    setDetailItem(null);
-                    setPreviewPdf({ url: path, title });
-                  }}
-                  style={{ padding: '8px 16px', background: '#0d9488', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
-                >
-                  <i className="fa-solid fa-file-pdf" style={{ marginRight: '6px' }}></i> PDF 미리보기 열기
-                </button>
-              ) : <div />}
-              <button
-                onClick={() => setDetailItem(null)}
-                style={{ padding: '8px 16px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', color: '#64748b', cursor: 'pointer' }}
-              >
-                닫기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
+

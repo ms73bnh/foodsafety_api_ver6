@@ -191,6 +191,9 @@ export default function Navbar() {
                 <Link href="/guidelines" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
                   <i className="fa-solid fa-book-bookmark" style={{ marginRight: '6px', color: '#0284c7' }}></i>기능성 평가 가이드라인
                 </Link>
+                <Link href="/raw-materials" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
+                  <i className="fa-solid fa-flask-vial" style={{ marginRight: '6px', color: '#059669' }}></i>원료별 정보 공시
+                </Link>
               </div>
             </div>
             <Link href="/qna" className={`navbar-item ${pathname === '/qna' ? 'active' : ''}`}>
@@ -382,7 +385,8 @@ export default function Navbar() {
           left: 50%;
           transform: translateX(-50%);
           background-color: #ffffff;
-          min-width: 175px;
+          min-width: 230px;
+          white-space: nowrap;
           box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
           border: 1px solid #e2e8f0;
           border-radius: 10px;
@@ -401,6 +405,7 @@ export default function Navbar() {
           text-decoration: none;
           font-size: 0.82rem;
           font-weight: 500;
+          white-space: nowrap;
           transition: background-color 0.2s, color 0.2s;
           text-align: left;
         }

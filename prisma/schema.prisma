@@ -182,6 +182,33 @@ model functional_guidelines {
   @@index([regDate])
 }
 
+// 식품안전나라 개별인정원료 정보 공시 게시판 (raw_material_posts)
+model raw_material_posts {
+  id             Int       @id @default(autoincrement())
+  no             String?   // 게시글 번호 (no)
+  ntctxtNo       String?   @unique @map("ntctxt_no") // 글 고유번호 (ntctxt_no)
+  title          String    // 제목 (titl)
+  companyNm      String?   @map("company_nm") // 업체명
+  recogNo        String?   @map("recog_no") // 인정번호
+  regDate        String?   @map("reg_date") // 등록일
+  viewCnt        String?   @map("view_cnt") // 조회수
+  content        String?   @db.Text // 본문 상세 내용
+  attachmentName String?   @map("attachment_name") // 첨부파일명
+  filePath       String?   @map("file_path") // 첨부파일 경로
+  fileName       String?   @map("file_name") // 서버 물리파일명
+  orgFileName    String?   @map("org_file_name") // 원본 논리파일명
+  fileTypeCd     String?   @map("file_type_cd") // 파일타입
+  ecmFileNo      String?   @map("ecm_file_no") // 파일 고유키
+  localPdfPath   String?   @map("local_pdf_path") // 로컬 저장 경로
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([title])
+  @@index([companyNm])
+  @@index([recogNo])
+  @@index([regDate])
+}
+
 // 사용자 관리 테이블
 model user {
   id          Int      @id @default(autoincrement())

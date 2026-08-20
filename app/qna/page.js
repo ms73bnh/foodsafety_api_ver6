@@ -498,14 +498,15 @@ export default function QnAPage() {
                 ></textarea>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 12px', background: '#f8fafc', borderRadius: '8px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#475569', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', flexWrap: 'nowrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: '#475569', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
                   <input
                     type="checkbox"
                     checked={form.isSecret}
                     onChange={e => setForm({ ...form, isSecret: e.target.checked })}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                   />
-                  <span>🔒 비밀글 설정</span>
+                  <span style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>🔒 비밀글 설정</span>
                 </label>
                 {form.isSecret && !user && (
                   <input

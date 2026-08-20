@@ -46,11 +46,24 @@ export async function GET(req) {
     if (dispos) {
       const disposList = dispos.split(',').map(d => d.trim()).filter(Boolean);
       if (disposList.length > 0) {
+        const targetShapes = new Set();
+        disposList.forEach(d => {
+          targetShapes.add(d);
+          if (d === '정') { targetShapes.add('정제'); }
+          if (d === '정제') { targetShapes.add('정'); }
+          if (d === '페이스트') { targetShapes.add('페이스트상'); }
+          if (d === '페이스트상') { targetShapes.add('페이스트'); }
+          if (d === '시럽') { targetShapes.add('시럽상'); }
+          if (d === '시럽상') { targetShapes.add('시럽'); }
+          if (d === '젤리') { targetShapes.add('젤리상'); }
+          if (d === '젤리상') { targetShapes.add('젤리'); }
+        });
+
         conditions.push({
-          OR: disposList.flatMap(d => [
-            { dispos: { contains: d, mode: 'insensitive' } },
-            { prdtShapCdNm: { contains: d, mode: 'insensitive' } }
-          ])
+          OR: [
+            { prdtShapCdNm: { in: Array.from(targetShapes) } },
+            ...Array.from(targetShapes).map(shape => ({ dispos: { equals: shape } }))
+          ]
         });
       }
     }

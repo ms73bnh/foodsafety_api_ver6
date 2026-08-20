@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -9,56 +9,50 @@ export async function GET(req) {
     const search = (searchParams.get('search') || '').trim();
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '15', 10);
-    const sortBy = searchParams.get('sortBy') || 'regDate';
+    const sortBy = searchParams.get('sortBy') || 'no';
     const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
 
     const where = {};
     if (search) {
       where.OR = [
         { title: { contains: search, mode: 'insensitive' } },
+        { companyNm: { contains: search, mode: 'insensitive' } },
+        { recogNo: { contains: search, mode: 'insensitive' } },
         { content: { contains: search, mode: 'insensitive' } },
-        { attachmentName: { contains: search, mode: 'insensitive' } },
-        { dept: { contains: search, mode: 'insensitive' } },
       ];
     }
 
     let orderBy = [];
     if (sortBy === 'regDate') {
-      orderBy = [{ regDate: { sort: sortOrder, nulls: 'last' } }, { id: sortOrder }];
-    } else if (sortBy === 'no') {
-      orderBy = [{ id: sortOrder }];
-    } else if (sortBy === 'title') {
-      orderBy = [{ title: sortOrder }, { id: 'desc' }];
+      orderBy = [{ regDate: sortOrder }, { id: 'desc' }];
     } else {
       orderBy = [{ id: sortOrder }];
     }
 
     const [total, list] = await Promise.all([
-      prisma.functional_guidelines.count({ where }),
-      prisma.functional_guidelines.findMany({
+      prisma.raw_material_posts.count({ where }),
+      prisma.raw_material_posts.findMany({
         where,
         orderBy,
         skip: (page - 1) * limit,
-        take: limit
+        take: limit,
+        select: {
+          id: true, no: true, ntctxtNo: true, title: true,
+          companyNm: true, recogNo: true, regDate: true, viewCnt: true,
+          attachmentName: true, localPdfPath: true
+        }
       })
     ]);
 
-    const enrichedList = list.map(item => ({
+    const enriched = list.map(item => ({
       ...item,
-      pdfPreviewUrl: `/api/guidelines/pdf/${item.id}`,
-      pdfDownloadUrl: `/api/guidelines/pdf/${item.id}?download=true`
+      pdfPreviewUrl: `/api/raw-materials/pdf/${item.id}`,
+      pdfDownloadUrl: `/api/raw-materials/pdf/${item.id}?download=true`
     }));
 
-    return NextResponse.json({
-      success: true,
-      data: enrichedList,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit)
-    });
+    return NextResponse.json({ success: true, data: enriched, total, page, limit, totalPages: Math.ceil(total / limit) });
   } catch (error) {
-    console.error('Guidelines GET error:', error);
+    console.error('Raw Materials GET error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
