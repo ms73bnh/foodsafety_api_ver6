@@ -6,22 +6,27 @@ const prisma = new PrismaClient();
 
 async function main() {
   const dataPath = path.join(__dirname, 'raw_materials_data.json');
-  if (!fs.existsSync(dataPath)) {
-    console.error('raw_materials_data.json not found!');
-    process.exit(1);
-  }
   const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
-  console.log(`Importing ${data.length} records...`);
+  console.log(`Importing ${data.length} records into raw_material_posts...`);
 
-  let inserted = 0, skipped = 0;
+  // no 숫자 기준 내림차순 정렬
+  data.sort((a, b) => parseInt(b.no || 0, 10) - parseInt(a.no || 0, 10));
+
+  let inserted = 0;
   for (const item of data) {
-    if (!item.ntctxtNo || !item.title) { skipped++; continue; }
+    if (!item.ntctxtNo || !item.title) continue;
+    const noInt = parseInt(item.no, 10) || null;
+
     await prisma.raw_material_posts.upsert({
       where: { ntctxtNo: item.ntctxtNo },
       update: {
+        no: noInt,
         title: item.title,
         companyNm: item.companyNm || null,
         recogNo: item.recogNo || null,
+        functionalityText: item.functionalityText || null,
+        dailyIntake: item.dailyIntake || null,
+        precautions: item.precautions || null,
         regDate: item.regDate || null,
         viewCnt: item.viewCnt || null,
         content: item.content || null,
@@ -34,11 +39,14 @@ async function main() {
         localPdfPath: item.localPdfPath || null,
       },
       create: {
-        no: item.no || null,
+        no: noInt,
         ntctxtNo: item.ntctxtNo,
         title: item.title,
         companyNm: item.companyNm || null,
         recogNo: item.recogNo || null,
+        functionalityText: item.functionalityText || null,
+        dailyIntake: item.dailyIntake || null,
+        precautions: item.precautions || null,
         regDate: item.regDate || null,
         viewCnt: item.viewCnt || null,
         content: item.content || null,
@@ -52,10 +60,9 @@ async function main() {
       }
     });
     inserted++;
-    if (inserted % 50 === 0) console.log(`  ${inserted}/${data.length} done...`);
   }
   const total = await prisma.raw_material_posts.count();
-  console.log(`Done! DB total: ${total}`);
+  console.log(`Done! Total records in raw_material_posts: ${total}`);
   await prisma.$disconnect();
 }
 main().catch(e => { console.error(e); process.exit(1); });

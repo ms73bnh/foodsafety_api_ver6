@@ -49,11 +49,35 @@ export default function ProductionListPage() {
       if (json.success) {
         // 데이터 집계 및 가공
         const processed = (json.matrixData || []).map(p => {
-          const total = Object.entries(p.yearly)
+          const total = Object.entries(p.yearly || {})
             .filter(([y]) => y !== '2026')
-            .reduce((sum, [_, val]) => sum + (val || 0), 0);
+            .reduce((sum, [_, val]) => sum + (Number(val) || 0), 0);
           return { ...p, total };
         });
+
+        // 현재 선택된 정렬 기준 적용
+        const { key, direction } = sortConfig;
+        processed.sort((a, b) => {
+          let valA, valB;
+          if (key === 'total') {
+            valA = Number(a.total || 0);
+            valB = Number(b.total || 0);
+            return direction === 'asc' ? valA - valB : valB - valA;
+          } else if (key === 'prdlstNm') {
+            valA = a.prdlstNm || '';
+            valB = b.prdlstNm || '';
+            return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+          } else if (key === 'bsshNm') {
+            valA = a.bsshNm || '';
+            valB = b.bsshNm || '';
+            return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+          } else {
+            valA = Number(a.yearly?.[key] || 0);
+            valB = Number(b.yearly?.[key] || 0);
+            return direction === 'asc' ? valA - valB : valB - valA;
+          }
+        });
+
         setData(processed);
         setTotal(json.totalCount || 0);
       }
@@ -62,7 +86,7 @@ export default function ProductionListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, hItemNm, limit]);
+  }, [page, searchQuery, hItemNm, limit, sortConfig]);
 
   useEffect(() => {
     fetchData();
@@ -83,22 +107,22 @@ export default function ProductionListPage() {
     const sortedData = [...data].sort((a, b) => {
       let valA, valB;
       if (key === 'total') {
-        valA = a.total;
-        valB = b.total;
+        valA = Number(a.total || 0);
+        valB = Number(b.total || 0);
+        return direction === 'asc' ? valA - valB : valB - valA;
       } else if (key === 'prdlstNm') {
-        valA = a.prdlstNm;
-        valB = b.prdlstNm;
+        valA = a.prdlstNm || '';
+        valB = b.prdlstNm || '';
+        return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       } else if (key === 'bsshNm') {
-        valA = a.bsshNm;
-        valB = b.bsshNm;
+        valA = a.bsshNm || '';
+        valB = b.bsshNm || '';
+        return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       } else {
-        valA = a.yearly[key] || 0;
-        valB = b.yearly[key] || 0;
+        valA = Number(a.yearly?.[key] || 0);
+        valB = Number(b.yearly?.[key] || 0);
+        return direction === 'asc' ? valA - valB : valB - valA;
       }
-
-      if (valA < valB) return direction === 'asc' ? -1 : 1;
-      if (valA > valB) return direction === 'asc' ? 1 : -1;
-      return 0;
     });
     setData(sortedData);
   };

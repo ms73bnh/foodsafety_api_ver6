@@ -443,9 +443,33 @@ export default function IngredientsPage() {
                     )}
                   </div>
                 </div>
-                <div style={{ padding: '14px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: 8, background: '#f8fafc', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
-                  <button onClick={() => openEdit(selected)} style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>수정</button>
-                  <button onClick={closeModal} style={{ padding: '8px 16px', background: '#fff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>닫기</button>
+                <div style={{ padding: '14px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
+                  <div>
+                    {selected.recognitionNumber && (
+                      <Link
+                        href={`/raw-materials?search=${encodeURIComponent(selected.recognitionNumber)}`}
+                        style={{
+                          padding: '7px 12px',
+                          background: '#f0fdfa',
+                          color: '#0d9488',
+                          border: '1px solid #99f6e4',
+                          borderRadius: 8,
+                          fontWeight: 700,
+                          fontSize: '0.78rem',
+                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <i className="fa-solid fa-file-pdf" style={{ color: '#ef4444' }} /> 원료별 정보 공시(PDF) 확인
+                      </Link>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => openEdit(selected)} style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>수정</button>
+                    <button onClick={closeModal} style={{ padding: '8px 16px', background: '#fff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>닫기</button>
+                  </div>
                 </div>
               </div>
             )}

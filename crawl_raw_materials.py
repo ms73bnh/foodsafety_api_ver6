@@ -30,17 +30,16 @@ session.headers.update(HEADERS)
 try:
     session.get(BASE_URL + '/portal/board/board.do?menu_grp=MENU_NEW01&menu_no=2660', timeout=10)
 except Exception as e:
-    print(f'Session init warning: {e}', flush=True)
+    pass
 
 def fetch_all_list():
     all_items = []
-    # 1페이지 조회
     p1_data = {**BASE_PARAMS, 'start_idx': '1', 'show_cnt': '40'}
     r = session.post(LIST_AJAX, data=p1_data, timeout=15)
     d = r.json()
     total = int(d.get('total_cnt', 0))
     pages = (total + 39) // 40
-    print(f'=== 총 {total}건 ({pages}페이지) 목록 수집 시작 ===', flush=True)
+    print(f'=== 총 {total}건 ({pages}페이지) 목록 수집 ===', flush=True)
     
     seen_ids = set()
     for p in range(1, pages + 1):
@@ -53,10 +52,9 @@ def fetch_all_list():
                 if nid and nid not in seen_ids:
                     seen_ids.add(nid)
                     all_items.append(it)
-            print(f'  [목록] {p}/{pages} 페이지 수집 완료 (누적 고유 건수: {len(all_items)}건)', flush=True)
         except Exception as ex:
-            print(f'  [목록 오류] {p} 페이지: {ex}', flush=True)
-        time.sleep(0.1)
+            print(f'  목록 오류 {p}페이지: {ex}', flush=True)
+        time.sleep(0.05)
     return all_items
 
 def parse_title_info(title):
@@ -67,6 +65,24 @@ def parse_title_info(title):
         company_nm = m.group(1).strip()
         recog_no = m.group(2).strip()
     return company_nm, recog_no
+
+def parse_post_structured(text):
+    fn = ''
+    m_fn = re.search(r'기능성\s*내용\s*:\s*([^\n\r]+(?:\n(?!\s*[○*※\-\u25cb\u25a0]|\s*일일섭취량|\s*섭취)[^\n\r]+)*)', text)
+    if m_fn:
+        fn = m_fn.group(1).strip()
+
+    daily = ''
+    m_daily = re.search(r'일일섭취량\s*:\s*([^\n\r]+(?:\n(?!\s*[○*※\-\u25cb\u25a0]|\s*섭취\s*시|\s*기능성)[^\n\r]+)*)', text)
+    if m_daily:
+        daily = m_daily.group(1).strip()
+
+    precautions = ''
+    m_prec = re.search(r'섭취\s*시\s*주의사항\s*[:\n]\s*([^\n\r]+(?:\n(?!\s*[○*※\u25cb\u25a0]|\s*English|\s*기타)[^\n\r]+)*)', text)
+    if m_prec:
+        precautions = m_prec.group(1).strip()
+
+    return fn, daily, precautions
 
 def process_item(item):
     ntctxt_no = str(item.get('ntctxt_no', ''))
@@ -80,9 +96,12 @@ def process_item(item):
         
     company_nm, recog_no = parse_title_info(title)
 
-    # 1. 상세 페이지 조회
     content = ""
+    fn_text = ""
+    daily_intake = ""
+    precautions = ""
     file_info = {}
+
     try:
         r_det = session.get(DETAIL_URL, params={
             'ntctxt_no': ntctxt_no, 'menu_no': '2660',
@@ -90,11 +109,12 @@ def process_item(item):
         }, timeout=8)
         r_det.encoding = 'utf-8'
         soup = BeautifulSoup(r_det.text, 'lxml')
-        for sel in ['div.board_view_con', 'div.bbs_view_con', 'div.view_cont', 'div.cont_area']:
-            c = soup.select_one(sel)
-            if c:
-                content = c.get_text('\n', strip=True)[:3000]
-                break
+        
+        post = soup.select_one('div#_post') or soup.select_one('div.post') or soup.select_one('article')
+        if post:
+            content = post.get_text('\n', strip=True)
+            fn_text, daily_intake, precautions = parse_post_structured(content)
+        
         for a in soup.find_all('a'):
             href = a.get('href', '')
             if 'downloadFile' in href:
@@ -115,30 +135,29 @@ def process_item(item):
     except Exception as ex:
         pass
 
-    # 2. PDF 다운로드
+    # PDF 경로 확인 (이미 다운로드된 경우 활용)
     local_pdf = ""
-    if file_info.get('fileName'):
-        filename = f'rm_{ntctxt_no}.pdf'
-        dest = PDF_DIR / filename
-        if dest.exists() and dest.stat().st_size > 1000:
-            local_pdf = f'/raw_material_pdf/{filename}'
-        else:
-            try:
-                data = {
-                    'filePath': file_info['filePath'],
-                    'fileName': file_info['fileName'],
-                    'orgFileName': file_info.get('orgFileName', 'file.pdf'),
-                    'file_type_cd': file_info.get('fileTypeCd', 'pdf'),
-                    'ecm_file_no': file_info.get('ecmFileNo', ''),
-                }
-                r_dl = session.post(DOWNLOAD_URL, data=data, timeout=12)
-                ct = r_dl.headers.get('content-type', '')
-                if r_dl.status_code == 200 and len(r_dl.content) > 1000 and 'html' not in ct:
-                    with open(str(dest), 'wb') as f:
-                        f.write(r_dl.content)
-                    local_pdf = f'/raw_material_pdf/{filename}'
-            except Exception as ex:
-                pass
+    filename = f'rm_{ntctxt_no}.pdf'
+    dest = PDF_DIR / filename
+    if dest.exists() and dest.stat().st_size > 1000:
+        local_pdf = f'/raw_material_pdf/{filename}'
+    elif file_info.get('fileName'):
+        try:
+            data = {
+                'filePath': file_info['filePath'],
+                'fileName': file_info['fileName'],
+                'orgFileName': file_info.get('orgFileName', 'file.pdf'),
+                'file_type_cd': file_info.get('fileTypeCd', 'pdf'),
+                'ecm_file_no': file_info.get('ecmFileNo', ''),
+            }
+            r_dl = session.post(DOWNLOAD_URL, data=data, timeout=10)
+            ct = r_dl.headers.get('content-type', '')
+            if r_dl.status_code == 200 and len(r_dl.content) > 1000 and 'html' not in ct:
+                with open(str(dest), 'wb') as f:
+                    f.write(r_dl.content)
+                local_pdf = f'/raw_material_pdf/{filename}'
+        except Exception:
+            pass
 
     return {
         'no': no,
@@ -149,6 +168,9 @@ def process_item(item):
         'regDate': reg_date,
         'viewCnt': view_cnt,
         'content': content,
+        'functionalityText': fn_text,
+        'dailyIntake': daily_intake,
+        'precautions': precautions,
         'attachmentName': file_info.get('attachmentName', ''),
         'filePath': file_info.get('filePath', ''),
         'fileName': file_info.get('fileName', ''),
@@ -160,30 +182,30 @@ def process_item(item):
 
 def main():
     items = fetch_all_list()
-    print(f'=== 총 {len(items)}건 고유 게시글 상세정보 및 PDF 병렬 다운로드 시작 (스레드 8개) ===', flush=True)
+    print(f'=== 총 {len(items)}건 본문 상세 내용 및 필드 병렬 수집 시작 ===', flush=True)
     
     results = []
-    completed_count = 0
-    pdf_count = 0
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    completed = 0
+    with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_item = {executor.submit(process_item, item): item for item in items}
         for future in as_completed(future_to_item):
             res = future.result()
             if res:
                 results.append(res)
-                if res.get('localPdfPath'):
-                    pdf_count += 1
-            completed_count += 1
-            if completed_count % 25 == 0 or completed_count == len(items):
-                print(f'  -> 진행률: {completed_count}/{len(items)} 완료 (PDF {pdf_count}개 수집)', flush=True)
-                with open('raw_materials_data.json', 'w', encoding='utf-8') as f:
-                    json.dump(results, f, ensure_ascii=False, indent=2)
+            completed += 1
+            if completed % 50 == 0 or completed == len(items):
+                print(f'  -> {completed}/{len(items)} 완료 (본문 수집률: {sum(1 for r in results if r["content"])}/{len(results)})', flush=True)
+
+    # no 기준 내림차순 정렬
+    try:
+        results.sort(key=lambda x: int(x.get('no', 0) or 0), reverse=True)
+    except Exception:
+        pass
 
     with open('raw_materials_data.json', 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    print(f'=== 모든 작업 완료! 총 {len(results)}건 / PDF {pdf_count}개 저장됨 ===', flush=True)
+    print(f'=== 완료! 총 {len(results)}건 저장 (본문 포함: {sum(1 for r in results if r["content"])}건) ===', flush=True)
 
 if __name__ == '__main__':
     main()

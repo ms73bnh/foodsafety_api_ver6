@@ -174,11 +174,23 @@ export default function Navbar() {
                 )}
               </div>
             </div>
-            <Link href="/companies" className={`navbar-item ${pathname === '/companies' ? 'active' : ''}`}><i className="fa-solid fa-building" style={{ marginRight: '6px' }}></i>업체별 현황</Link>
-            <Link href="/companies/compare" className={`navbar-item ${pathname === '/companies/compare' ? 'active' : ''}`} style={{ color: 'var(--accent)' }}><i className="fa-solid fa-code-compare" style={{ marginRight: '6px' }}></i>업체 상호 비교</Link>
-            <Link href="/production" className={`navbar-item ${pathname === '/production' ? 'active' : ''}`} style={{ color: '#0d9488' }}><i className="fa-solid fa-boxes-stacked" style={{ marginRight: '6px' }}></i>생산 실적 분석</Link>
             <div className="navbar-dropdown-container">
-              <span className={`navbar-item dropdown-trigger ${pathname === '/categories' || pathname === '/ingredients' || pathname === '/guidelines' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+              <span className={`navbar-item dropdown-trigger ${pathname.startsWith('/companies') ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+                <i className="fa-solid fa-building" style={{ marginRight: '6px' }}></i>업체별 정보<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
+              </span>
+              <div className="navbar-dropdown-menu">
+                <Link href="/companies" className="dropdown-link">
+                  <i className="fa-solid fa-building" style={{ marginRight: '6px', color: '#0284c7' }}></i>업체별 현황
+                </Link>
+                <Link href="/companies/compare" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
+                  <i className="fa-solid fa-code-compare" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>업체 상호 비교
+                </Link>
+              </div>
+            </div>
+            <Link href="/production" className={`navbar-item ${pathname.startsWith('/production') ? 'active' : ''}`} style={{ color: '#0d9488' }}><i className="fa-solid fa-boxes-stacked" style={{ marginRight: '6px' }}></i>생산 실적 분석</Link>
+            <Link href="/analytics" className={`navbar-item ${pathname === '/analytics' ? 'active' : ''}`} style={{ color: '#0284c7', fontWeight: 700 }}><i className="fa-solid fa-chart-pie" style={{ marginRight: '6px' }}></i>통합 분석 레포트</Link>
+            <div className="navbar-dropdown-container">
+              <span className={`navbar-item dropdown-trigger ${pathname === '/categories' || pathname === '/ingredients' || pathname === '/guidelines' || pathname === '/raw-materials' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
                 <i className="fa-solid fa-flask" style={{ marginRight: '6px' }}></i>개별인정형<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
               </span>
               <div className="navbar-dropdown-menu">
