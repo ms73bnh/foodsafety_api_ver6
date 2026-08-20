@@ -1,0 +1,927 @@
+{
+  "meta": {
+    "total_count": 155183,
+    "last_updated": "2026-04-22",
+    "data_source": "건강기능식품 공전 + 실제 제품 데이터 44,365건"
+  },
+  "summary": {
+    "영양성분": {
+      "count": 110631,
+      "items": 28
+    },
+    "기능성원료": {
+      "count": 35165,
+      "items": 69
+    },
+    "개별인정형": {
+      "count": 3429,
+      "items": 50
+    },
+    "미분류": {
+      "count": 5958,
+      "items": 0
+    }
+  },
+  "categories": [
+    {
+      "category": "영양성분",
+      "description": "비타민, 무기질 등 28종",
+      "items": [
+        {
+          "id": "nut_018",
+          "name": "아연",
+          "count": 11798,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_003",
+          "name": "비타민 D",
+          "count": 9531,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_010",
+          "name": "비타민 B6",
+          "count": 7947,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_006",
+          "name": "비타민 B1",
+          "count": 7623,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_007",
+          "name": "비타민 B2",
+          "count": 7176,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_014",
+          "name": "비타민 C",
+          "count": 7102,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_004",
+          "name": "비타민 E",
+          "count": 6708,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_020",
+          "name": "셀레늄",
+          "count": 5643,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_008",
+          "name": "나이아신",
+          "count": 5585,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_009",
+          "name": "판토텐산",
+          "count": 5524,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_011",
+          "name": "엽산",
+          "count": 4381,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_013",
+          "name": "비오틴",
+          "count": 4020,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_001",
+          "name": "비타민 A",
+          "count": 3932,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_012",
+          "name": "비타민 B12",
+          "count": 3881,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_022",
+          "name": "망간",
+          "count": 3127,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_016",
+          "name": "마그네슘",
+          "count": 2949,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_015",
+          "name": "칼슘",
+          "count": 2760,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_025",
+          "name": "크롬",
+          "count": 2010,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_005",
+          "name": "비타민 K",
+          "count": 1972,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_017",
+          "name": "철",
+          "count": 1892,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_019",
+          "name": "구리",
+          "count": 1674,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_023",
+          "name": "몰리브덴",
+          "count": 1150,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_021",
+          "name": "요오드",
+          "count": 971,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_002",
+          "name": "베타카로틴",
+          "count": 639,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_027",
+          "name": "단백질",
+          "count": 463,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_024",
+          "name": "칼륨",
+          "count": 90,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_028",
+          "name": "필수지방산",
+          "count": 50,
+          "category": "영양성분"
+        },
+        {
+          "id": "nut_026",
+          "name": "식이섬유",
+          "count": 33,
+          "category": "영양성분"
+        }
+      ]
+    },
+    {
+      "category": "기능성원료",
+      "description": "공전 등재 기능성원료 69종",
+      "items": [
+        {
+          "id": "func_051",
+          "name": "프로바이오틱스",
+          "count": 6659,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_002",
+          "name": "홍삼",
+          "count": 4556,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_055",
+          "name": "엠에스엠",
+          "count": 3605,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_015",
+          "name": "EPA 및 DHA 함유 유지",
+          "count": 2628,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_025",
+          "name": "가르시니아캄보지아 추출물",
+          "count": 2214,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_013",
+          "name": "밀크씨슬 추출물",
+          "count": 1605,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_026",
+          "name": "마리골드꽃추출물",
+          "count": 1356,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_011",
+          "name": "바나바잎 추출물",
+          "count": 1258,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_012",
+          "name": "은행잎 추출물",
+          "count": 1063,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_044",
+          "name": "차전자피식이섬유",
+          "count": 962,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_022",
+          "name": "옥타코사놀 함유 유지",
+          "count": 938,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_008",
+          "name": "코엔자임Q10",
+          "count": 927,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_006",
+          "name": "녹차추출물",
+          "count": 843,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_007",
+          "name": "프로폴리스추출물",
+          "count": 838,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_028",
+          "name": "쏘팔메토 열매 추출물",
+          "count": 685,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_054",
+          "name": "테아닌",
+          "count": 672,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_050",
+          "name": "프락토올리고당",
+          "count": 634,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_036",
+          "name": "난소화성말토덱스트린",
+          "count": 566,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_029",
+          "name": "포스파티딜세린",
+          "count": 539,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_027",
+          "name": "헤마토코쿠스 추출물",
+          "count": 524,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_057",
+          "name": "히알루론산",
+          "count": 507,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_016",
+          "name": "감마리놀렌산 함유 유지",
+          "count": 370,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_047",
+          "name": "알로에 겔",
+          "count": 352,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_052",
+          "name": "홍국",
+          "count": 309,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_001",
+          "name": "인삼",
+          "count": 215,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_009",
+          "name": "대두이소플라본",
+          "count": 142,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_030",
+          "name": "글루코사민",
+          "count": 62,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_010",
+          "name": "구아바잎 추출물",
+          "count": 5,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_003",
+          "name": "엽록소 함유 식물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_004",
+          "name": "클로렐라",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_005",
+          "name": "스피루리나",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_014",
+          "name": "달맞이꽃종자 추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_017",
+          "name": "레시틴",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_018",
+          "name": "스쿠알렌",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_019",
+          "name": "식물스테롤",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_020",
+          "name": "식물스테롤에스테르",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_021",
+          "name": "알콕시글리세롤 함유 상어간유",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_023",
+          "name": "매실추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_024",
+          "name": "공액리놀레산",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_031",
+          "name": "NAG",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_032",
+          "name": "뮤코다당·단백",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_033",
+          "name": "구아검",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_034",
+          "name": "글루코만난",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_035",
+          "name": "귀리식이섬유",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_037",
+          "name": "대두식이섬유",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_038",
+          "name": "목이버섯식이섬유",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_039",
+          "name": "밀식이섬유",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_040",
+          "name": "보리식이섬유",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_041",
+          "name": "아라비아검",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_042",
+          "name": "옥수수겨식이섬유",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_043",
+          "name": "이눌린",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_045",
+          "name": "폴리덱스트로스",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_046",
+          "name": "호로파종자식이섬유",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_048",
+          "name": "영지버섯 자실체 추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_049",
+          "name": "키토산",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_053",
+          "name": "대두단백",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_056",
+          "name": "폴리감마글루탐산",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_058",
+          "name": "홍경천 추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_059",
+          "name": "빌베리 추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_060",
+          "name": "마늘",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_061",
+          "name": "라피노스",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_062",
+          "name": "분말한천",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_063",
+          "name": "크레아틴",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_064",
+          "name": "유단백가수분해물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_065",
+          "name": "상황버섯추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_066",
+          "name": "토마토추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_067",
+          "name": "곤약감자추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_068",
+          "name": "회화나무열매추출물",
+          "count": 0,
+          "category": "기능성원료"
+        },
+        {
+          "id": "func_069",
+          "name": "콜레우스포스콜리 추출물",
+          "count": 0,
+          "category": "기능성원료"
+        }
+      ]
+    },
+    {
+      "category": "개별인정형",
+      "description": "식약처 개별인정 기능성원료 (TOP 50)",
+      "items": [
+        {
+          "id": "indv_001",
+          "name": "루테인지아잔틴복합추출물",
+          "count": 112,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_002",
+          "name": "저분자콜라겐펩타이드",
+          "count": 92,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_003",
+          "name": "콜레우스 포스콜리 추출물",
+          "count": 86,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_004",
+          "name": "스페인감초추출물",
+          "count": 76,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_005",
+          "name": "돌외잎주정추출분말(액티포닌®)",
+          "count": 70,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_006",
+          "name": "풋사과추출물 애플페논(Applephenon)",
+          "count": 60,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_007",
+          "name": "자일로올리고당(xylooligosaccharide) 분말",
+          "count": 59,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_008",
+          "name": "저분자콜라겐펩타이드GT",
+          "count": 55,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_009",
+          "name": "강황추출물",
+          "count": 52,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_010",
+          "name": "유산균발효굴추출물(FGO)",
+          "count": 51,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_011",
+          "name": "나토균배양분말",
+          "count": 48,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_012",
+          "name": "HK 나토배양물",
+          "count": 46,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_013",
+          "name": "마리골드꽃추출물(지아잔틴함유)",
+          "count": 45,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_014",
+          "name": "리스펙타(Respecta®)[프로바이오틱스 등 복합물]",
+          "count": 45,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_015",
+          "name": "아프리카망고 종자추출물(IGOB131)",
+          "count": 43,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_016",
+          "name": "아쉬아간다 추출물(ShodenⓇ)",
+          "count": 41,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_017",
+          "name": "유단백가수분해물(락티움)",
+          "count": 38,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_018",
+          "name": "헛개나무과병추출분말",
+          "count": 37,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_019",
+          "name": "베타글루칸분말",
+          "count": 36,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_020",
+          "name": "미숙여주주정추출분말",
+          "count": 36,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_021",
+          "name": "저분자콜라겐펩타이드 AG",
+          "count": 35,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_022",
+          "name": "Lactobacillus sakei Probio65",
+          "count": 35,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_023",
+          "name": "모로오렌지추출분말(Morosil®)",
+          "count": 34,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_024",
+          "name": "인동덩굴꽃봉오리추출물(그린세라-F)",
+          "count": 33,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_025",
+          "name": "백수오 등 복합추출물",
+          "count": 33,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_026",
+          "name": "그린커피빈주정추출물",
+          "count": 32,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_027",
+          "name": "감태추출물",
+          "count": 32,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_028",
+          "name": "L. curvatus HY7601와 L. plantarum KY1032의 프로바이오틱스 복합물",
+          "count": 31,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_029",
+          "name": "루바브뿌리추출물",
+          "count": 30,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_030",
+          "name": "차즈기추출물",
+          "count": 30,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_031",
+          "name": "L-카르니틴 타르트레이트",
+          "count": 30,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_032",
+          "name": "프로바이오틱스(드시모네)",
+          "count": 29,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_033",
+          "name": "석류추출물",
+          "count": 28,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_034",
+          "name": "타마린드강황주정추출복합물(TamaFlexⓇ)",
+          "count": 27,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_035",
+          "name": "강황 추출물(터마신)",
+          "count": 27,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_036",
+          "name": "루테인지아잔틴복합추출물20%",
+          "count": 26,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_037",
+          "name": "저분자 피쉬 콜라겐 펩타이드(Naticol® BPMG)",
+          "count": 25,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_038",
+          "name": "레몬버베나추출물 등 복합물(티에뜨레Ⓡ)",
+          "count": 25,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_039",
+          "name": "보스웰리아추출물(SERRATRIN)",
+          "count": 25,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_040",
+          "name": "보스웰리아추출물등 복합물(Flexir)",
+          "count": 25,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_041",
+          "name": "레몬 밤 추출물 혼합분말",
+          "count": 24,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_042",
+          "name": "꾸지뽕잎추출물",
+          "count": 23,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_043",
+          "name": "호박씨추출물 등 복합물",
+          "count": 23,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_044",
+          "name": "구아바잎추출물 등 복합물(BENDU381)",
+          "count": 23,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_045",
+          "name": "미역 등 복합추출물(잔티젠)",
+          "count": 23,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_046",
+          "name": "피쉬 콜라겐펩타이드",
+          "count": 23,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_047",
+          "name": "시서스추출물",
+          "count": 23,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_048",
+          "name": "그린커피빈추출물",
+          "count": 22,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_049",
+          "name": "참당귀 추출분말(Nutragen)",
+          "count": 22,
+          "category": "개별인정형"
+        },
+        {
+          "id": "indv_050",
+          "name": "Bifidobacterium breve B-3 프로바이오틱스",
+          "count": 21,
+          "category": "개별인정형"
+        }
+      ]
+    }
+  ]
+}
