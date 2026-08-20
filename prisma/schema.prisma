@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+// 공공데이터 원본 및 정규화된 신고 데이터 저장 (declarations)
+model declarations {
+  id                 Int      @id @default(autoincrement())
+  prdlstReportNo     String   @unique // 품목제조번호 (PRDLST_REPORT_NO)
+  bsshNm             String?  // 업소명 (BSSH_NM)
+  prdlstNm           String?  // 품목명 (PRDLST_NM)
+  dispos             String?  // 제품형태 (DISPOS) 또는 PRDT_SHAP_CD_NM
+  prmsDt             String?  // 허가일자 (PRMS_DT)
+  primaryFnclty      String?  // 주된기능성 (PRIMARY_FNCLTY)
+  ntkMthd            String?  // 섭취방법 (NTK_MTHD)
+  iftknAtntMatrCn    String?  // 섭취시주의사항 (IFTKN_ATNT_MATR_CN)
+  cstdyMthd          String?  // 보관방법 (CSTDY_MTHD)
+  rawmtrlNm          String?  // 품목유형(기능지표성분) (RAWMTRL_NM)
+  
+  // RAW API 추가 필드
+  lcnsNo             String?  // 인허가번호 (LCNS_NO)
+  pogDaycnt          String?  // 소비기한_일수 (POG_DAYCNT)
+  prdlstCdnm         String?  // 유형 (PRDLST_CDNM)
+  stdrStnd           String?  // 기준규격 (STDR_STND)
+  hiengLntrtDvsNm    String?  // 고열량저영양여부 (HIENG_LNTRT_DVS_NM)
+  production         String?  // 생산종료여부 (PRODUCTION)
+  childCrtfcYn       String?  // 어린이기호식품품질인증여부 (CHILD_CRTFC_YN)
+  prdtShapCdNm       String?  // 제품_형태_코드_명 (PRDT_SHAP_CD_NM)
+  frmlcMtrqlt        String?  // 포장재질 (FRMLC_MTRQLT)
+  indutyCdNm         String?  // 업종 (INDUTY_CD_NM)
+  lastUpdtDtm        String?  // 최종수정일자 (LAST_UPDT_DTM)
+  indvRawmtrlNm      String?  // 기능성 원재료 (INDV_RAWMTRL_NM)
+  etcRawmtrlNm       String?  // 기타 원재료 (ETC_RAWMTRL_NM)
+  capRawmtrlNm       String?  // 캡슐 원재료 (CAP_RAWMTRL_NM)
+  frmlcMthd          String?  // 포장방법 (FRMLC_MTHD)
+  
+  // 기능적 요구사항 (정규화된 데이터)
+  normalizedPackaging     String?  // 정규화된 포장재질
+  normalizedFunctionality String?  // 정규화된 기능성
+  searchFunctionality     String?  // 검색용 기능성 (공백/대소문자 무시용)
+  normalizedRawMaterials  String?  // 정규화된 원재료
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// 사전 매핑 테이블 / 정규화 룰 (normalization_rules)
+model normalization_rules {
+  id                 Int      @id @default(autoincrement())
+  ruleType           String   // 'PACKAGING', 'FUNCTIONALITY', 'MATERIAL'
+  originalText       String   // 원본 매칭 단어
+  normalizedText     String   // 정규화 목표 단어
+  createdAt          DateTime @default(now())
+  
+  @@unique([ruleType, originalText])
+}
+
+// 데이터 변경 이력 저장 (change_log)
+model change_log {
+  id             Int      @id @default(autoincrement())
+  prdlstReportNo String
+  type           String   // 'NEW', 'UPDATED', 'DELETED'
+  changes        String?  // JSON string: 변경 내역
+  loggedAt       DateTime @default(now())
+}
+
+// 동기화 일시 및 상태 저장 (sync_history)
+model sync_history {
+  id           Int      @id @default(autoincrement())
+  status       String   // "SUCCESS" or "ERROR"
+  addedCount   Int      @default(0)
+  updatedCount Int      @default(0)
+  deletedCount Int      @default(0)
+  errorMessage String?
+  executedAt   DateTime @default(now())
+}
+
+// 사용자 정의 배너/외부 링크 관리 (banners)
+model banners {
+  id        Int      @id @default(autoincrement())
+  title     String
+  imageUrl  String
+  linkUrl   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// 실시간 식품안전 알림 정보 저장 (food_alerts)
+model food_alerts {
+  id             Int      @id @default(autoincrement())
+  type           String   // 'RECALL', 'INSPECTION', 'OVERSEAS_RECALL'
+  uniqueKey      String   @unique // 중복 방지용 고유 식별값
+  prdtNm         String?  // 제품명
+  bsshNm         String?  // 업체명
+  reason         String?  // 사유 (회수사유, 부적합항목, 위해성분 등)
+  result         String?  // 판정결과 등
+  regDate        String?  // 등록일/제조일
+  imgUrl         String?  // 이미지 경로 (주로 회수정보)
+  detailJson     String?  // 기타 상세 필드 전체 (JSON string)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([type])
+  @@index([regDate])
+}
+
+// API 동기화 상태 저장 (sync_state)
+model sync_state {
+  id             String   @id // API 서비스 ID (예: 'I0490')
+  lastIndex      Int      @default(0)
+  updatedAt      DateTime @updatedAt
+}
+
+// 건강기능식품 생산실적 보고 데이터 저장 (production_stats)
+model production_stats {
+  id                    Int      @id @default(autoincrement())
+  prdlstReportNo        String   // 품목제조보고번호 (PRDLST_REPORT_NO)
+  evlYr                 String   // 보고년도 (EVL_YR)
+  bsshNm                String?  // 업소명 (BSSH_NM)
+  prdlstNm              String?  // 품목명 (PRDLST_NM)
+  hItemNm               String?  // 품목유형 (H_ITEM_NM)
+  lcnsNo                String?  // 인허가번호 (LCNS_NO)
+  gubun                 String?  // 품목구분 (GUBUN)
+  fyerPrdctnAbrtQy      Float?   // 연간생산능력(KG) (FYER_PRDCTN_ABRT_QY)
+  prdctnQy              Float?   // 생산량(KG) (PRDCTN_QY)
+  createdAt             DateTime @default(now())
+
+  @@unique([prdlstReportNo, evlYr])
+  @@index([bsshNm])
+  @@index([prdlstNm])
+  @@index([evlYr])
+}
+
+// 사용자 관리 테이블
+model user {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique // 아이디
+  password    String   // pbkdf2로 해싱된 비밀번호
+  name        String   // 성명
+  companyNm   String   // 회사명
+  deptNm      String   // 부서명
+  positionNm  String   // 직급
+  titleNm     String   // 직책
+  role        String   @default("USER") // ADMIN or USER
+  isApproved  Boolean  @default(false) // 가입 승인 여부
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 작업 이력 로그 테이블
+model audit_log {
+  id        Int      @id @default(autoincrement())
+  username  String   // 행동한 사용자 아이디
+  role      String   // 사용자 권한
+  page      String   // 작업 발생 페이지
+  action    String   // 구체적인 행동
+  details   String?  // 상세 변경 내용
+  ipAddress String?  // 요청자 IP
+  createdAt DateTime @default(now())
+}
+
+// 시스템 공지사항 팝업
+model notice {
+  id        Int       @id @default(autoincrement())
+  title     String    // 공지 제목
+  content   String    // 공지 내용
+  isActive  Boolean   @default(true)
+  startAt   DateTime? // 표시 시작일 (null = 즉시)
+  endAt     DateTime? // 표시 종료일 (null = 무기한)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy Int       // 작성자 user.id
+}
+
+// 개별인정형원료
+model individual_raw_materials {
+  id                 Int      @id @default(autoincrement())
+  recognitionNumber  String   @unique @map("recognition_number") // 인정번호 (예: 제2023-12호)
+  name               String?  // 원료명
+  company            String?  // 업체명
+  functionalityText  String?  @map("functionality_text") // 기능성내용
+  dailyIntake        String?  @map("daily_intake") // 일일섭취량
+  precautions        String?  // 섭취시 주의사항
+  registeredDate     String?  @map("registered_date") // 인정일자 또는 등록년도 (예: 2023 또는 2023.5.8.)
+  detailContent      String?  @map("detail_content") // 상세내용
+  categories         String?  // 매핑된 기능성 카테고리 목록 (쉼표 구분)
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// 일반식품 (식품(첨가물)품목제조보고) 데이터 저장
+model general_declarations {
+  id                    Int      @id @default(autoincrement())
+  prdlstReportNo        String   @unique // 품목제조번호 (PRDLST_REPORT_NO)
+  prmsDt                String?  // 허가일자 (PRMS_DT)
+  lastUpdtDtm           String?  // 최종수정일자 (LAST_UPDT_DTM)
+  lcnsNo                String?  // 인허가번호 (LCNS_NO)
+  prdlstNm              String?  // 제품명 (PRDLST_NM)
+  qltyMntncTmlmtDaycnt  String?  // 품질유지기한일수 (QLTY_MNTNC_TMLMT_DAYCNT)
+  bsshNm                String?  // 업소명 (BSSH_NM)
+  prdlstDcnm            String?  // 품목유형명 (PRDLST_DCNM)
+  childCrtfcYn          String?  // 어린이기호식품품질인증여부 (CHILD_CRTFC_YN)
+  indutyCdNm            String?  // 업종 (INDUTY_CD_NM)
+  dispos                String?  // 제품형태 (DISPOS)
+  frmlcMtrqlt           String?  // 포장재질 (FRMLC_MTRQLT)
+  usage                 String?  // 용법 (USAGE)
+  etqtyXportPrdlstYn    String?  // 내수/겸용구분 (ETQTY_XPORT_PRDLST_YN)
+  pogDaycnt             String?  // 소비기한 (POG_DAYCNT)
+  hiengLntrtDvsNm       String?  // 고열량저영양식품여부 (HIENG_LNTRT_DVS_NM)
+  production            String?  // 생산종료여부 (PRODUCTION)
+  prpos                 String?  // 용도 (PRPOS)
+
+  // 정규화된 포장재질
+  normalizedPackaging   String?  // 정규화된 포장재질
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([prdlstNm])
+  @@index([bsshNm])
+  @@index([prmsDt])
+  @@index([prdlstDcnm])
+  @@index([normalizedPackaging])
+  @@index([dispos])
+  @@index([prdlstReportNo])
+}
+
+
