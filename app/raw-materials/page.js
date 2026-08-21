@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { formatFormattedText } from "@/lib/normalizer";
 
 const SORT_OPTIONS = [
   { key: "no", label: "번호" },
@@ -21,6 +22,9 @@ export default function RawMaterialsPage() {
   // 모달 상태
   const [detailModalItem, setDetailModalItem] = useState(null);
   const [previewPdfItem, setPreviewPdfItem] = useState(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // 동기화 상태
   const [syncing, setSyncing] = useState(false);
@@ -78,18 +82,34 @@ export default function RawMaterialsPage() {
     }
   };
 
+  const handleOpenHistory = async () => {
+    setShowHistoryModal(true);
+    setHistoryLoading(true);
+    try {
+      const res = await fetch("/api/ingredients/history?type=RAW_MATERIAL");
+      const json = await res.json();
+      if (json.success) {
+        setHistoryLogs(json.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const sortIcon = (key) => {
     if (sortBy !== key) return " ⇅";
     return sortOrder === "asc" ? " ↑" : " ↓";
   };
 
   return (
-    <main style={{ minHeight: "100vh", background: "#f8fafc", padding: "28px 16px" }}>
+    <main style={{ minHeight: "100vh", background: "#f8fafc", padding: "28px 20px" }}>
       {/* 타이틀 및 헤더 */}
-      <div style={{ maxWidth: 1100, margin: "0 auto 18px" }}>
+      <div style={{ maxWidth: 1400, margin: "0 auto 18px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
-            <h1 style={{ fontSize: "1.55rem", fontWeight: 800, color: "#0f172a", margin: 0 }}>
+            <h1 style={{ fontSize: "1.65rem", fontWeight: 800, color: "#0f172a", margin: 0 }}>
               <i className="fa-solid fa-flask-vial" style={{ color: "#0d9488", marginRight: 10 }} />
               원료별 정보 공시
             </h1>
@@ -101,6 +121,26 @@ export default function RawMaterialsPage() {
             {syncMsg && (
               <span style={{ fontSize: "0.82rem", color: "#0d9488", fontWeight: 600 }}>{syncMsg}</span>
             )}
+            <button
+              onClick={handleOpenHistory}
+              style={{
+                padding: "8px 14px",
+                background: "#f1f5f9",
+                color: "#334155",
+                border: "1px solid #cbd5e1",
+                borderRadius: 8,
+                fontWeight: 700,
+                fontSize: "0.85rem",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+              }}
+            >
+              <i className="fa-solid fa-clock-rotate-left" style={{ color: "#0284c7" }} />
+              변경 이력 확인
+            </button>
             <button
               onClick={handleSync}
               disabled={syncing}
@@ -127,7 +167,7 @@ export default function RawMaterialsPage() {
       </div>
 
       {/* 검색바 */}
-      <div style={{ maxWidth: 1100, margin: "0 auto 14px" }}>
+      <div style={{ maxWidth: 1400, margin: "0 auto 14px" }}>
         <form onSubmit={handleSearch} style={{ display: "flex", gap: 8 }}>
           <input
             value={inputVal}
@@ -183,7 +223,7 @@ export default function RawMaterialsPage() {
       {/* 테이블 목록 */}
       <div
         style={{
-          maxWidth: 1100,
+          maxWidth: 1400,
           margin: "0 auto",
           background: "#fff",
           borderRadius: 12,
@@ -224,7 +264,7 @@ export default function RawMaterialsPage() {
                 <th style={{ padding: "13px 16px", textAlign: "left", fontSize: "0.83rem", color: "#475569", fontWeight: 700 }}>
                   제목 (원료명)
                 </th>
-                <th style={{ padding: "13px 16px", textAlign: "center", width: 140, fontSize: "0.83rem", color: "#475569", fontWeight: 700 }}>
+                <th style={{ padding: "13px 16px", textAlign: "center", width: 160, fontSize: "0.83rem", color: "#475569", fontWeight: 700 }}>
                   업체명
                 </th>
                 <th style={{ padding: "13px 16px", textAlign: "center", width: 140, fontSize: "0.83rem", color: "#475569", fontWeight: 700 }}>
@@ -246,7 +286,7 @@ export default function RawMaterialsPage() {
                 >
                   등록일{sortIcon("regDate")}
                 </th>
-                <th style={{ padding: "13px 16px", textAlign: "center", width: 150, fontSize: "0.83rem", color: "#475569", fontWeight: 700 }}>
+                <th style={{ padding: "13px 16px", textAlign: "center", width: 175, minWidth: 175, fontSize: "0.83rem", color: "#475569", fontWeight: 700 }}>
                   첨부파일
                 </th>
               </tr>
@@ -291,7 +331,7 @@ export default function RawMaterialsPage() {
                           fontWeight: 600,
                         }}
                       >
-                        기능성: {item.functionalityText.length > 45 ? item.functionalityText.substring(0, 45) + "..." : item.functionalityText}
+                        기능성: {item.functionalityText.length > 55 ? item.functionalityText.substring(0, 55) + "..." : item.functionalityText}
                       </span>
                     )}
                   </td>
@@ -305,13 +345,13 @@ export default function RawMaterialsPage() {
                     {item.regDate || "-"}
                   </td>
                   <td style={{ padding: "14px 16px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
                       {item.localPdfPath || item.attachmentName ? (
                         <>
                           <button
                             onClick={() => setPreviewPdfItem(item)}
                             style={{
-                              padding: "5px 9px",
+                              padding: "5px 8px",
                               background: "#e0f2fe",
                               color: "#0369a1",
                               border: "1px solid #bae6fd",
@@ -319,9 +359,10 @@ export default function RawMaterialsPage() {
                               fontSize: "0.74rem",
                               fontWeight: 700,
                               cursor: "pointer",
-                              display: "flex",
+                              display: "inline-flex",
                               alignItems: "center",
                               gap: 4,
+                              whiteSpace: "nowrap",
                             }}
                           >
                             <i className="fa-solid fa-eye" /> 미리보기
@@ -330,7 +371,7 @@ export default function RawMaterialsPage() {
                             href={`/api/raw-materials/pdf/${item.id}?download=true`}
                             download
                             style={{
-                              padding: "5px 9px",
+                              padding: "5px 8px",
                               background: "#f0fdf4",
                               color: "#15803d",
                               border: "1px solid #bbf7d0",
@@ -338,9 +379,10 @@ export default function RawMaterialsPage() {
                               fontSize: "0.74rem",
                               fontWeight: 700,
                               textDecoration: "none",
-                              display: "flex",
+                              display: "inline-flex",
                               alignItems: "center",
                               gap: 4,
+                              whiteSpace: "nowrap",
                             }}
                           >
                             <i className="fa-solid fa-download" /> 다운
@@ -485,14 +527,15 @@ export default function RawMaterialsPage() {
             </div>
 
             {/* 모달 본문 상세 내용 */}
+            {/* 모달 본문 상세 내용 */}
             <div style={{ padding: "22px 24px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
               {/* 1. 기능성 내용 */}
               <div style={{ background: "#f0fdfa", border: "1.5px solid #99f6e4", borderRadius: 10, padding: "14px 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#0f766e", fontWeight: 700, fontSize: "0.88rem", marginBottom: 6 }}>
                   <i className="fa-solid fa-circle-check" /> 기능성 내용
                 </div>
-                <div style={{ color: "#134e4a", fontSize: "0.93rem", fontWeight: 600, lineHeight: 1.6 }}>
-                  {detailModalItem.functionalityText || (detailModalItem.content && detailModalItem.content.includes("기능성내용") ? detailModalItem.content : "공시된 기능성 내용 정보가 없습니다.")}
+                <div style={{ color: "#134e4a", fontSize: "0.93rem", fontWeight: 600, lineHeight: 1.7, whiteSpace: "pre-line" }}>
+                  {formatFormattedText(detailModalItem.functionalityText || (detailModalItem.content && detailModalItem.content.includes("기능성내용") ? detailModalItem.content : "공시된 기능성 내용 정보가 없습니다."))}
                 </div>
               </div>
 
@@ -502,8 +545,8 @@ export default function RawMaterialsPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#1d4ed8", fontWeight: 700, fontSize: "0.88rem", marginBottom: 6 }}>
                     <i className="fa-solid fa-capsules" /> 일일섭취량
                   </div>
-                  <div style={{ color: "#1e3a8a", fontSize: "0.9rem", lineHeight: 1.6, whiteSpace: "pre-line" }}>
-                    {detailModalItem.dailyIntake}
+                  <div style={{ color: "#1e3a8a", fontSize: "0.92rem", lineHeight: 1.7, whiteSpace: "pre-line", fontWeight: 600 }}>
+                    {formatFormattedText(detailModalItem.dailyIntake)}
                   </div>
                 </div>
               )}
@@ -514,8 +557,8 @@ export default function RawMaterialsPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#b45309", fontWeight: 700, fontSize: "0.88rem", marginBottom: 6 }}>
                     <i className="fa-solid fa-triangle-exclamation" /> 섭취 시 주의사항
                   </div>
-                  <div style={{ color: "#78350f", fontSize: "0.88rem", lineHeight: 1.6, whiteSpace: "pre-line" }}>
-                    {detailModalItem.precautions}
+                  <div style={{ color: "#78350f", fontSize: "0.9rem", lineHeight: 1.7, whiteSpace: "pre-line" }}>
+                    {formatFormattedText(detailModalItem.precautions)}
                   </div>
                 </div>
               )}
@@ -527,7 +570,7 @@ export default function RawMaterialsPage() {
                     <i className="fa-solid fa-file-lines" style={{ marginRight: 6 }} /> 식약처 공시 원문 텍스트
                   </div>
                   <div style={{ color: "#334155", fontSize: "0.84rem", lineHeight: 1.7, whiteSpace: "pre-line", maxHeight: 180, overflowY: "auto", background: "#fff", padding: 12, borderRadius: 6, border: "1px solid #f1f5f9" }}>
-                    {detailModalItem.content}
+                    {formatFormattedText(detailModalItem.content)}
                   </div>
                 </div>
               )}
@@ -619,6 +662,83 @@ export default function RawMaterialsPage() {
                   닫기
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📌 변경 이력 확인 팝업 모달 */}
+      {showHistoryModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
+          <div style={{ background: "#fff", width: "100%", maxWidth: 850, maxHeight: "88vh", borderRadius: 14, boxShadow: "0 20px 40px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", overflow: "hidden", animation: "modalFadeIn 0.2s ease-out" }}>
+            <div style={{ padding: "18px 24px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
+                  <i className="fa-solid fa-clock-rotate-left" style={{ color: "#0284c7" }} />
+                  공시 정보 변경 이력 모니터링
+                </h3>
+                <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#64748b" }}>식약처 공시 게시글 동기화 시 감지된 신규 등록 및 변경 이력</p>
+              </div>
+              <button onClick={() => setShowHistoryModal(false)} style={{ background: "#f1f5f9", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer", color: "#64748b" }}>
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            <div style={{ padding: "20px 24px", overflowY: "auto", flex: 1 }}>
+              {historyLoading ? (
+                <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
+                  <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: "2rem", color: "#0284c7" }} />
+                  <p style={{ marginTop: 10 }}>변경 이력 불러오는 중...</p>
+                </div>
+              ) : historyLogs.length === 0 ? (
+                <div style={{ padding: 50, textAlign: "center", color: "#94a3b8" }}>
+                  <i className="fa-solid fa-clipboard-check" style={{ fontSize: "2.5rem", marginBottom: 12, color: "#cbd5e1" }} />
+                  <p style={{ fontSize: "0.92rem", fontWeight: 600 }}>아직 기록된 변경 이력이 없습니다.</p>
+                  <p style={{ fontSize: "0.82rem", color: "#94a3b8" }}>동기화 실행 시 최신 공시의 변경사항이 자동으로 감지되어 기록됩니다.</p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {historyLogs.map((log) => (
+                    <div key={log.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 18px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ background: log.type.includes("CREATED") ? "#dcfce7" : "#dbeafe", color: log.type.includes("CREATED") ? "#15803d" : "#1d4ed8", padding: "2px 8px", borderRadius: 4, fontSize: "0.72rem", fontWeight: 800 }}>
+                            {log.type.includes("CREATED") ? "신규 등록" : "항목 변경"}
+                          </span>
+                          <strong style={{ fontSize: "0.92rem", color: "#0f172a" }}>{log.details?.title || log.details?.name || log.prdlstReportNo}</strong>
+                        </div>
+                        <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                          {new Date(log.loggedAt).toLocaleString("ko-KR")}
+                        </span>
+                      </div>
+
+                      {log.details?.changedFields && (
+                        <div style={{ fontSize: "0.82rem", color: "#334155", marginTop: 6, background: "#fff", padding: 10, borderRadius: 6, border: "1px solid #f1f5f9" }}>
+                          <div style={{ fontWeight: 700, color: "#d97706", marginBottom: 4 }}>
+                            변경 항목: {log.details.changedFields.join(", ")}
+                          </div>
+                          {log.details.before && (
+                            <div style={{ fontSize: "0.78rem", color: "#ef4444" }}>
+                              <strong>[변경 전]</strong> {JSON.stringify(log.details.before)}
+                            </div>
+                          )}
+                          {log.details.after && (
+                            <div style={{ fontSize: "0.78rem", color: "#0d9488", marginTop: 2 }}>
+                              <strong>[변경 후]</strong> {JSON.stringify(log.details.after)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: "12px 24px", borderTop: "1px solid #e2e8f0", background: "#f8fafc", textAlign: "right" }}>
+              <button onClick={() => setShowHistoryModal(false)} style={{ padding: "8px 18px", background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" }}>
+                확인
+              </button>
             </div>
           </div>
         </div>

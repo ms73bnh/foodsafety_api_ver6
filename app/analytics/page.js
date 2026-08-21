@@ -180,7 +180,7 @@ function SheetModal({ data, selectedCompanies, onClose }) {
             </h3>
             <span style={{ color: "#64748b", fontSize: "0.75rem", fontWeight: 600 }}>* 컬럼 클릭 시 정렬 / 허가일자 열까지 고정</span>
           </div>
-          <div style={{ overflowX: "auto", maxHeight: "calc(100vh - 480px)" }}>
+          <div style={{ overflowX: "auto", maxHeight: "650px" }}>
             <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: "0.78rem", minWidth: 1350, width: "100%" }}>
               <thead>
                 <tr style={{ position: "sticky", top: 0, zIndex: 10 }}>
@@ -331,22 +331,6 @@ function DrilldownPane({ ingredientsList }) {
       {showSheet && drillData && (
         <SheetModal data={drillData} selectedCompanies={selectedCompanies} onClose={() => setShowSheet(false)} />
       )}
-
-      <div style={{ marginBottom: 16, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 700, marginRight: 4 }}>빠른 검색:</span>
-        {QUICK_TAGS.map(tag => (
-          <button key={tag} onClick={() => setSearchQuery(tag)}
-            style={{ padding: "4px 10px", borderRadius: 14, border: "1.5px solid", borderColor: searchQuery === tag ? "#0d9488" : "#e2e8f0", background: searchQuery === tag ? "#f0fdfa" : "#fff", color: searchQuery === tag ? "#0d9488" : "#64748b", fontSize: "0.74rem", fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>
-            {tag}
-          </button>
-        ))}
-        {searchQuery && (
-          <button onClick={() => setSearchQuery("")}
-            style={{ padding: "4px 10px", borderRadius: 14, border: "1px solid #fca5a5", background: "#fff1f2", color: "#ef4444", fontSize: "0.74rem", fontWeight: 700, cursor: "pointer" }}>
-            ✕ 초기화
-          </button>
-        )}
-      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "28% 27% 45%", gap: 16, alignItems: "stretch", minHeight: 600 }}>
 
@@ -577,17 +561,13 @@ export default function AnalyticsReportPage() {
       .then(json => {
         if (json.success && json.ingredients) {
           setIngredientsList(json.ingredients);
-          if (json.ingredients.length > 0) {
-            const first = json.ingredients[0];
-            setSelectedIngrId(first.id.toString());
-            setAutocompleteQuery(first.name + " [" + (first.recognitionNumber || "-") + "] " + (first.company ? "(" + first.company + ")" : ""));
-          }
         }
       }).catch(e => console.error(e));
   }, []);
 
   const fetchReport = useCallback(async () => {
     if (activeTab !== "ingredient" && activeTab !== "companies") return;
+    if (activeTab === "ingredient" && !selectedIngrId) return;
     setLoading(true);
     try {
       let url = "/api/analytics/report?type=" + activeTab;
@@ -601,7 +581,7 @@ export default function AnalyticsReportPage() {
 
   useEffect(() => {
     if (activeTab === "drilldown") return;
-    if (activeTab === "ingredient" && !selectedIngrId && ingredientsList.length > 0) return;
+    if (activeTab === "ingredient" && !selectedIngrId) return;
     fetchReport();
   }, [activeTab, selectedIngrId, fetchReport]);
 
@@ -643,7 +623,14 @@ export default function AnalyticsReportPage() {
             { key: "ingredient", label: "원료별 시장 규모 & 생산 점유율", icon: "fa-flask" },
             { key: "companies", label: "제조사 생산 포트폴리오", icon: "fa-building" },
           ].map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            <button key={tab.key} onClick={() => {
+              setActiveTab(tab.key);
+              if (tab.key === "ingredient") {
+                setAutocompleteQuery("");
+                setSelectedIngrId("");
+                setReportData(null);
+              }
+            }}
               style={{ flex: 1, minWidth: 200, padding: "10px 14px", border: "none", borderRadius: 8, background: activeTab === tab.key ? "#fff" : "transparent", color: activeTab === tab.key ? "#0d9488" : "#64748b", fontWeight: activeTab === tab.key ? 800 : 600, fontSize: "0.88rem", cursor: "pointer", boxShadow: activeTab === tab.key ? "0 2px 6px rgba(0,0,0,0.06)" : "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.15s" }}>
               <i className={"fa-solid " + tab.icon} />{tab.label}
             </button>
@@ -664,8 +651,9 @@ export default function AnalyticsReportPage() {
                 <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
                   <input type="text" value={autocompleteQuery}
                     onChange={e => { setAutocompleteQuery(e.target.value); setIsDropdownOpen(true); }}
-                    onFocus={() => setIsDropdownOpen(true)}
-                    placeholder="원료명(예: 루바브, 아쉬와간다, 루테인), 인정번호(제2020-1호), 업체명 입력..."
+                    onFocus={() => { setAutocompleteQuery(""); setIsDropdownOpen(true); }}
+                    onClick={() => { setAutocompleteQuery(""); setIsDropdownOpen(true); }}
+                    placeholder="원료명, 인정번호, 업체명을 입력하세요"
                     style={{ width: "100%", padding: "12px 42px 12px 16px", borderRadius: 8, border: "1.5px solid #0d9488", fontSize: "0.94rem", fontWeight: 700, color: "#0f172a", background: "#f0fdfa", outline: "none" }} />
                   {autocompleteQuery && (
                     <button onClick={() => { setAutocompleteQuery(""); setIsDropdownOpen(true); }} style={{ position: "absolute", right: 14, background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "0.9rem" }}>
@@ -871,7 +859,13 @@ export default function AnalyticsReportPage() {
                   </div>
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <div style={{ background: "#fff", padding: "60px 20px", borderRadius: 12, textAlign: "center", color: "#94a3b8", boxShadow: "0 1px 6px rgba(0,0,0,0.05)" }}>
+                <i className="fa-solid fa-flask" style={{ fontSize: "3rem", opacity: 0.25, marginBottom: 16, color: "#0d9488" }} />
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 800, color: "#334155", margin: "0 0 8px" }}>개별인정형 원료를 검색하여 선택해주세요</h3>
+                <p style={{ fontSize: "0.85rem", color: "#64748b", margin: 0 }}>상단 검색창에서 원료명, 인정번호, 또는 업체명을 검색하여 선택하시면 10개년 생산실적 및 시장 점유율 분석 레포트가 생성됩니다.</p>
+              </div>
+            )}
           </div>
         )}
 

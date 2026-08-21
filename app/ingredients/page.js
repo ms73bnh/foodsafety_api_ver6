@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { formatFormattedText } from '@/lib/normalizer';
 
 const CATEGORY_LIST = [
   "장건강","혈행개선","눈건강","뇌건강","간건강","혈압","체지방감소","혈당조절",
@@ -33,6 +34,13 @@ export default function IngredientsPage() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [limit] = useState(20);
+
+  // 동기화 & 변경이력 모달 상태
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // CRUD Modal state
   const [modal, setModal] = useState(null); // null | 'create' | 'edit' | 'view' | 'delete'
@@ -162,6 +170,42 @@ export default function IngredientsPage() {
     setSaving(false);
   };
 
+  const handleSync = async () => {
+    if (!confirm('식약처 최신 개별인정형 원료 공시 데이터를 동기화하고 변경사항을 감지하시겠습니까?')) return;
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const res = await fetch('/api/ingredients/sync', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setSyncMsg(json.message);
+        await fetchData(1);
+      } else {
+        alert(json.error || '동기화 중 오류가 발생했습니다.');
+      }
+    } catch (e) {
+      alert('동기화 중 오류가 발생했습니다: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleOpenHistory = async () => {
+    setShowHistoryModal(true);
+    setHistoryLoading(true);
+    try {
+      const res = await fetch('/api/ingredients/history?type=INGREDIENT');
+      const json = await res.json();
+      if (json.success) {
+        setHistoryLogs(json.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const getCategoryTags = (cats) => {
     if (!cats) return [];
     return cats.split(',').map(c => c.trim()).filter(Boolean);
@@ -179,22 +223,50 @@ export default function IngredientsPage() {
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: '32px 24px' }}>
       {/* 헤더 */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a', marginBottom: 4 }}>
             개별인정형 원료 DB
           </h1>
-          <p style={{ color: '#64748b', fontSize: '0.8rem' }}>
+          <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>
             식약처 개별인정형 기능성 원료 목록 — 총 <strong style={{ color: '#0284c7' }}>{total.toLocaleString()}</strong>건 (기본: 최신 등록순 정렬)
           </p>
         </div>
-        <button onClick={openCreate} style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
-          background: '#0284c7', color: '#fff', border: 'none', borderRadius: 8,
-          fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer'
-        }}>
-          <i className="fas fa-plus" /> 원료 추가
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {syncMsg && (
+            <span style={{ fontSize: '0.82rem', color: '#0d9488', fontWeight: 600 }}>{syncMsg}</span>
+          )}
+          <button
+            onClick={handleOpenHistory}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+              background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8,
+              fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+            }}
+          >
+            <i className="fa-solid fa-clock-rotate-left" style={{ color: '#0284c7' }} />
+            변경 이력 확인
+          </button>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+              background: syncing ? '#94a3b8' : '#0d9488', color: '#fff', border: 'none', borderRadius: 8,
+              fontWeight: 700, fontSize: '0.82rem', cursor: syncing ? 'not-allowed' : 'pointer', boxShadow: '0 2px 6px rgba(13,148,136,0.25)'
+            }}
+          >
+            <i className={`fa-solid ${syncing ? 'fa-spinner fa-spin' : 'fa-rotate'}`} />
+            {syncing ? '동기화 중...' : '최신 공시 동기화'}
+          </button>
+          <button onClick={openCreate} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
+            background: '#0284c7', color: '#fff', border: 'none', borderRadius: 8,
+            fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', boxShadow: '0 2px 6px rgba(2,132,199,0.25)'
+          }}>
+            <i className="fas fa-plus" /> 원료 추가
+          </button>
+        </div>
       </div>
 
       {/* 검색 & 필터 */}
@@ -389,7 +461,9 @@ export default function IngredientsPage() {
                   {[['기능성 내용', selected.functionalityText], ['일일섭취량', selected.dailyIntake], ['섭취시 주의사항', selected.precautions]].map(([k, v]) => v ? (
                     <div key={k} style={{ marginBottom: 12 }}>
                       <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700, marginBottom: 4, textTransform: 'uppercase' }}>{k}</p>
-                      <p style={{ fontSize: '0.82rem', color: '#334155', lineHeight: 1.6, background: '#f8fafc', padding: '10px 14px', borderRadius: 8 }}>{v}</p>
+                      <p style={{ fontSize: '0.84rem', color: '#334155', lineHeight: 1.7, background: '#f8fafc', padding: '10px 14px', borderRadius: 8, whiteSpace: 'pre-line' }}>
+                        {formatFormattedText(v)}
+                      </p>
                     </div>
                   ) : null)}
 
@@ -534,6 +608,84 @@ export default function IngredientsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 📌 변경 이력 확인 팝업 모달 */}
+      {showHistoryModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
+          <div style={{ background: "#fff", width: "100%", maxWidth: 850, maxHeight: "88vh", borderRadius: 14, boxShadow: "0 20px 40px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "18px 24px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
+                  <i className="fa-solid fa-clock-rotate-left" style={{ color: "#0284c7" }} />
+                  개별인정형 원료 변경 이력 모니터링
+                </h3>
+                <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#64748b" }}>식약처 공시 크롤링 동기화 시 감지된 원료의 항목별(섭취량, 주의사항, 업체명 등) 변경 이력</p>
+              </div>
+              <button onClick={() => setShowHistoryModal(false)} style={{ background: "#f1f5f9", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer", color: "#64748b" }}>
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            <div style={{ padding: "20px 24px", overflowY: "auto", flex: 1 }}>
+              {historyLoading ? (
+                <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
+                  <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: "2rem", color: "#0284c7" }} />
+                  <p style={{ marginTop: 10 }}>변경 이력 불러오는 중...</p>
+                </div>
+              ) : historyLogs.length === 0 ? (
+                <div style={{ padding: 50, textAlign: "center", color: "#94a3b8" }}>
+                  <i className="fa-solid fa-clipboard-check" style={{ fontSize: "2.5rem", marginBottom: 12, color: "#cbd5e1" }} />
+                  <p style={{ fontSize: "0.92rem", fontWeight: 600 }}>아직 기록된 변경 이력이 없습니다.</p>
+                  <p style={{ fontSize: "0.82rem", color: "#94a3b8" }}>최신 공시 동기화 실행 시 변경사항이 자동으로 감지되어 기록됩니다.</p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {historyLogs.map((log) => (
+                    <div key={log.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 18px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ background: log.type.includes("CREATED") ? "#dcfce7" : "#dbeafe", color: log.type.includes("CREATED") ? "#15803d" : "#1d4ed8", padding: "2px 8px", borderRadius: 4, fontSize: "0.72rem", fontWeight: 800 }}>
+                            {log.type.includes("CREATED") ? "신규 등록" : "항목 변경"}
+                          </span>
+                          <strong style={{ fontSize: "0.92rem", color: "#0f172a" }}>{log.details?.name || log.prdlstReportNo}</strong>
+                          <span style={{ fontSize: "0.78rem", color: "#0d9488", fontWeight: 700 }}>[{log.prdlstReportNo}]</span>
+                        </div>
+                        <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                          {new Date(log.loggedAt).toLocaleString("ko-KR")}
+                        </span>
+                      </div>
+
+                      {log.details?.changedFields && (
+                        <div style={{ fontSize: "0.82rem", color: "#334155", marginTop: 6, background: "#fff", padding: 10, borderRadius: 6, border: "1px solid #f1f5f9" }}>
+                          <div style={{ fontWeight: 700, color: "#d97706", marginBottom: 4 }}>
+                            변경 항목: {log.details.changedFields.join(", ")}
+                          </div>
+                          {log.details.before && (
+                            <div style={{ fontSize: "0.78rem", color: "#ef4444" }}>
+                              <strong>[변경 전]</strong> {JSON.stringify(log.details.before)}
+                            </div>
+                          )}
+                          {log.details.after && (
+                            <div style={{ fontSize: "0.78rem", color: "#0d9488", marginTop: 2 }}>
+                              <strong>[변경 후]</strong> {JSON.stringify(log.details.after)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: "12px 24px", borderTop: "1px solid #e2e8f0", background: "#f8fafc", textAlign: "right" }}>
+              <button onClick={() => setShowHistoryModal(false)} style={{ padding: "8px 18px", background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" }}>
+                확인
+              </button>
+            </div>
           </div>
         </div>
       )}
