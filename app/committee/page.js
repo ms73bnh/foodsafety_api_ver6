@@ -161,6 +161,7 @@ export default function CommitteePage() {
   const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef(null);
   const chatEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
 
   // ESC 키로 모달 닫기
   useEffect(() => {
@@ -292,9 +293,11 @@ export default function CommitteePage() {
     }
   };
 
-  // 챗봇 스크롤 자동 이동
+  // 챗봇 스크롤 자동 이동 (컨테이너 내부만 스크롤, 페이지 전체 스크롤 방지)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   // 쿨다운 타이머 (2초)
@@ -590,7 +593,7 @@ export default function CommitteePage() {
             </div>
 
             {/* 챗봇 메시지 영역 */}
-            <div style={{ flex: 1, padding: "18px 20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 14, background: "#f8fafc" }}>
+            <div ref={chatContainerRef} style={{ flex: 1, padding: "18px 20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 14, background: "#f8fafc" }}>
               {messages.map((msg, i) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
                   <div style={{
