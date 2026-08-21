@@ -13,15 +13,20 @@ function cleanText(text = '') {
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&#034;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&lsquo;/g, "\u2018")
-    .replace(/&rsquo;/g, "\u2019")
-    .replace(/&reg;/g, "\u00AE")
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#034;/gi, '"')
+    .replace(/&#039;/gi, "'")
+    .replace(/&lsquo;/gi, "'")
+    .replace(/&rsquo;/gi, "'")
+    .replace(/&ldquo;/gi, '"')
+    .replace(/&rdquo;/gi, '"')
+    .replace(/&quot;/gi, '"')
+    .replace(/&reg;/gi, '®')
+    .replace(/&copy;/gi, '©')
+    .replace(/&trade;/gi, '™')
     .replace(/\r\n|\r/g, '\n')
     .replace(/\n{3,}/g, '\n\n');
 }
@@ -62,10 +67,11 @@ function parseAgendas(rawContent = '', meetingTitle = '') {
         else if (rawName.includes('기준') || rawName.includes('규격')) agendaType = '기준규격';
         else if (rawName.includes('재심의') || rawName.includes('재신청')) agendaType = '재심의';
 
-        const ingredientName = rawName
-          .replace(/^기능성\s*원료\s*['‘]/, '')
-          .replace(/['’]\s*\(기능성\s*추가\)/, '')
-          .replace(/['’]/g, '')
+        let ingredientName = rawName
+          .replace(/^기능성\s*원료\s*/i, '')
+          .replace(/^['"‘“\s]+|['"’”\s]+$/g, '')
+          .replace(/\s*\(기능성\s*추가\)\s*$/i, '')
+          .replace(/^['"‘“\s]+|['"’”\s]+$/g, '')
           .trim();
 
         agendas.push({ orderIndex: order++, rawName: line, ingredientName, result, agendaType, details: `${meetingTitle} > ${line}` });
