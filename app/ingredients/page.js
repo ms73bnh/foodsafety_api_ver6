@@ -374,13 +374,13 @@ export default function IngredientsPage() {
                     </td>
 
                     {/* 기능성 내용 (호버 툴팁 적용) */}
-                    <td style={{ padding: '10px 14px', fontSize: '0.78rem', color: '#475569', maxWidth: 220 }}>
-                      <div className={(item.functionalityText && item.functionalityText.length > 25) ? "hover-container" : ""}>
+                    <td style={{ padding: '10px 14px', fontSize: '0.78rem', color: '#475569', maxWidth: 240 }}>
+                      <div className={(item.functionalityText && item.functionalityText.length > 20) ? "hover-container" : ""}>
                         <div className="hover-static" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {item.functionalityText || '-'}
+                          {item.functionalityText ? item.functionalityText.replace(/[\r\n]+/g, ', ').replace(/^[,\s\-·•]+/, '').replace(/[,\s\-·•]+$/, '').trim() : '-'}
                         </div>
-                        {item.functionalityText && item.functionalityText.length > 25 && (
-                          <div className="hover-reveal" style={{ fontSize: '0.78rem', whiteSpace: 'normal', width: 280, lineHeight: 1.4 }}>
+                        {item.functionalityText && item.functionalityText.length > 20 && (
+                          <div className="hover-reveal" style={{ fontSize: '0.78rem', whiteSpace: 'pre-line', width: 300, lineHeight: 1.5 }}>
                             {item.functionalityText}
                           </div>
                         )}
@@ -487,11 +487,11 @@ export default function IngredientsPage() {
                         <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 8 }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
                             <thead>
-                              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0 }}>
-                                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#64748b' }}>신고번호</th>
-                                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#64748b' }}>품목(제품명)</th>
-                                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#64748b' }}>제조업체</th>
-                                <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', width: 80 }}>인허가일자</th>
+                              <tr style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                                <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#475569', background: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>신고번호</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#475569', background: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>품목(제품명)</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#475569', background: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>제조업체</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, color: '#475569', background: '#f1f5f9', borderBottom: '1px solid #cbd5e1', width: 90 }}>인허가일자</th>
                               </tr>
                             </thead>
                             <tbody>

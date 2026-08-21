@@ -692,10 +692,10 @@ export default function CategoriesPage() {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
                         <thead>
                           <tr style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#64748b', background: '#f8fafc' }}>신고번호</th>
-                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#64748b', background: '#f8fafc' }}>품목(제품명)</th>
-                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#64748b', background: '#f8fafc' }}>제조업체</th>
-                            <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 600, color: '#64748b', background: '#f8fafc', width: 80 }}>인허가일자</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#475569', background: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>신고번호</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#475569', background: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>품목(제품명)</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#475569', background: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>제조업체</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, color: '#475569', background: '#f1f5f9', borderBottom: '1px solid #cbd5e1', width: 90 }}>인허가일자</th>
                           </tr>
                         </thead>
                         <tbody>
