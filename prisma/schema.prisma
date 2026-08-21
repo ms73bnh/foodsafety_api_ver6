@@ -308,4 +308,43 @@ model general_declarations {
   @@index([prdlstReportNo])
 }
 
+// ── 건강기능식품심의위원회 회의록 & 안건 ───────────────────────────────────────
+model committee_meetings {
+  id           Int                 @id @default(autoincrement())
+  seq          String              @unique // 식약처 게시글 고유번호 seq (예: 33423)
+  title        String              // 회의 제목 (예: 제202차 건강기능식품심의위원회 회의 결과)
+  meetingNo    String?             // 회차 (예: 제202차)
+  meetingDate  String?             // 일시 (예: 2026.4.30.(목))
+  department   String?             // 담당부서 (예: 영양기능연구과)
+  attendees    String?             // 참석자 정보 (예: 재적위원 28명 중 15명 참석)
+  rawContent   String?             // 본문 원문 텍스트
+  sourceUrl    String?             // 식약처 원본 링크
+  pdfFileName  String?             // 첨부 PDF 파일명
+  pdfFileUrl   String?             // 첨부 PDF 다운로드 링크
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
 
+  agendas      committee_agendas[]
+}
+
+model committee_agendas {
+  id           Int                @id @default(autoincrement())
+  meetingId    Int
+  meeting      committee_meetings @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  
+  orderIndex   Int                @default(1) // 안건 순번
+  rawName      String             // 안건 원문 (예: 하고초추출분말 : 인정)
+  ingredientName String           // 원료/성분명 (예: 하고초추출분말, 피치세라마이드(PF3) 등)
+  result       String             // 심의 결과: "인정" | "보완" | "불인정" | "기타"
+  agendaType   String?            // 신청 구분: "신규인정" | "기능성추가" | "기준규격" 등
+  details      String?            // 안건 세부 내용 및 비고
+  
+  // RAG용 768차원 Gemini Embedding 벡터 (JSON string 저장)
+  embedding    String?            // JSON.stringify(number[])
+
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([ingredientName])
+  @@index([result])
+}

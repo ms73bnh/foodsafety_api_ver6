@@ -190,7 +190,7 @@ export default function Navbar() {
             <Link href="/production" className={`navbar-item ${pathname.startsWith('/production') ? 'active' : ''}`} style={{ color: '#0d9488' }}><i className="fa-solid fa-boxes-stacked" style={{ marginRight: '6px' }}></i>생산 실적 분석</Link>
             <Link href="/analytics" className={`navbar-item ${pathname === '/analytics' ? 'active' : ''}`} style={{ color: '#0284c7', fontWeight: 700 }}><i className="fa-solid fa-chart-pie" style={{ marginRight: '6px' }}></i>통합 분석 레포트</Link>
             <div className="navbar-dropdown-container">
-              <span className={`navbar-item dropdown-trigger ${pathname === '/categories' || pathname === '/ingredients' || pathname === '/guidelines' || pathname === '/raw-materials' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+              <span className={`navbar-item dropdown-trigger ${pathname === '/categories' || pathname === '/ingredients' || pathname === '/guidelines' || pathname === '/raw-materials' || pathname === '/committee' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
                 <i className="fa-solid fa-flask" style={{ marginRight: '6px' }}></i>개별인정형<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
               </span>
               <div className="navbar-dropdown-menu">
@@ -205,6 +205,9 @@ export default function Navbar() {
                 </Link>
                 <Link href="/raw-materials" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
                   <i className="fa-solid fa-flask-vial" style={{ marginRight: '6px', color: '#059669' }}></i>원료별 정보 공시
+                </Link>
+                <Link href="/committee" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9', background: '#f0fdfa' }}>
+                  <i className="fa-solid fa-robot" style={{ marginRight: '6px', color: '#0284c7' }}></i>심의위원회 회의록 (AI Q&A)
                 </Link>
               </div>
             </div>
