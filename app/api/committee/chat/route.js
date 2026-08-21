@@ -194,9 +194,25 @@ ${cleanQuestion}
 
 위 참고자료를 바탕으로 사용자의 질문에 대해 전문적이고 명확하게 답변해 주세요.`;
 
-    // 5. Gemini 스트리밍 생성
-    const model = getGeminiModel();
-    const resultStream = await model.generateContentStream(prompt);
+    // 5. Gemini 스트리밍 생성 (모델 자동 폴백 지원)
+    let resultStream = null;
+    const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro'];
+    let lastGenError = null;
+
+    for (const mName of candidateModels) {
+      try {
+        const model = getGeminiModel(mName);
+        resultStream = await model.generateContentStream(prompt);
+        if (resultStream) break;
+      } catch (err) {
+        lastGenError = err;
+        console.warn(`Model ${mName} generation failed, trying next fallback:`, err.message);
+      }
+    }
+
+    if (!resultStream) {
+      throw new Error(`AI 답변 생성 실패: ${lastGenError?.message || '사용 가능한 Gemini 모델을 찾을 수 없습니다.'}`);
+    }
 
     const encoder = new TextEncoder();
     const { remaining, isAdmin: isAdminUser } = rateCheck;
@@ -221,7 +237,7 @@ ${cleanQuestion}
             if (chunkText) controller.enqueue(encoder.encode(chunkText));
           }
         } catch (streamErr) {
-          controller.enqueue(encoder.encode(`\n[오류 발생: ${streamErr.message}]`));
+          controller.enqueue(encoder.encode(`\n[답변 스트리밍 중 오류 발생: ${streamErr.message}]`));
         } finally {
           controller.close();
         }
@@ -238,7 +254,7 @@ ${cleanQuestion}
     });
   } catch (error) {
     console.error('Committee Chat API Error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error.message || '서버 응답 오류가 발생했습니다.' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

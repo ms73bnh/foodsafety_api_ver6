@@ -36,6 +36,21 @@ export async function GET(req) {
       where.department = department;
     }
 
+    const sortBy = searchParams.get('sortBy') || 'date';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
+
+    let orderBy = [];
+    if (sortBy === 'postNo' || sortBy === 'date') {
+      // id: asc는 최신 공시(postNo: 362, 2026년)부터 순서대로 정렬됨
+      orderBy = [{ id: sortOrder === 'desc' ? 'asc' : 'desc' }];
+    } else if (sortBy === 'views') {
+      orderBy = [{ viewCount: sortOrder }, { id: 'asc' }];
+    } else if (sortBy === 'title') {
+      orderBy = [{ title: sortOrder }, { id: 'asc' }];
+    } else {
+      orderBy = [{ id: sortOrder === 'desc' ? 'asc' : 'desc' }];
+    }
+
     const [total, meetings, deptStats] = await Promise.all([
       prisma.committee_meetings.count({ where }),
       prisma.committee_meetings.findMany({
@@ -56,10 +71,7 @@ export async function GET(req) {
             select: { agendas: true }
           }
         },
-        orderBy: [
-          { postNo: 'desc' },
-          { id: 'desc' }
-        ],
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
