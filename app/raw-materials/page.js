@@ -670,10 +670,10 @@ export default function RawMaterialsPage() {
       {/* 📌 변경 이력 확인 팝업 모달 */}
       {showHistoryModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
-          <div style={{ background: "#fff", width: "100%", maxWidth: 850, maxHeight: "88vh", borderRadius: 14, boxShadow: "0 20px 40px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", overflow: "hidden", animation: "modalFadeIn 0.2s ease-out" }}>
+          <div style={{ background: "#fff", width: "100%", maxWidth: 960, maxHeight: "88vh", borderRadius: 16, boxShadow: "0 20px 40px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", overflow: "hidden", animation: "modalFadeIn 0.2s ease-out" }}>
             <div style={{ padding: "18px 24px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
+                <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
                   <i className="fa-solid fa-clock-rotate-left" style={{ color: "#0284c7" }} />
                   공시 정보 변경 이력 모니터링
                 </h3>
@@ -698,46 +698,95 @@ export default function RawMaterialsPage() {
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  {historyLogs.map((log) => (
-                    <div key={log.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 18px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ background: log.type.includes("CREATED") ? "#dcfce7" : "#dbeafe", color: log.type.includes("CREATED") ? "#15803d" : "#1d4ed8", padding: "2px 8px", borderRadius: 4, fontSize: "0.72rem", fontWeight: 800 }}>
-                            {log.type.includes("CREATED") ? "신규 등록" : "항목 변경"}
-                          </span>
-                          <strong style={{ fontSize: "0.92rem", color: "#0f172a" }}>{log.details?.title || log.details?.name || log.prdlstReportNo}</strong>
-                        </div>
-                        <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-                          {new Date(log.loggedAt).toLocaleString("ko-KR")}
-                        </span>
-                      </div>
+                  {historyLogs.map((log) => {
+                    const isCreated = log.type && log.type.includes("CREATED");
+                    const title = log.details?.title || log.details?.name || log.prdlstReportNo;
+                    const recogNo = log.details?.recogNo || (log.prdlstReportNo?.startsWith("제") ? log.prdlstReportNo : "");
 
-                      {log.details?.changedFields && (
-                        <div style={{ fontSize: "0.82rem", color: "#334155", marginTop: 6, background: "#fff", padding: 10, borderRadius: 6, border: "1px solid #f1f5f9" }}>
-                          <div style={{ fontWeight: 700, color: "#d97706", marginBottom: 4 }}>
-                            변경 항목: {log.details.changedFields.join(", ")}
+                    return (
+                      <div key={log.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 20px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12, flexWrap: "nowrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                            <span style={{
+                              background: isCreated ? "#dcfce7" : "#dbeafe",
+                              color: isCreated ? "#15803d" : "#1d4ed8",
+                              padding: "3px 10px", borderRadius: 6, fontSize: "0.74rem", fontWeight: 800,
+                              whiteSpace: "nowrap", flexShrink: 0
+                            }}>
+                              {isCreated ? "신규 등록" : "항목 변경"}
+                            </span>
+                            <strong style={{ fontSize: "0.95rem", color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {title}
+                            </strong>
+                            {recogNo && (
+                              <span style={{ fontSize: "0.8rem", color: "#0d9488", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+                                [{recogNo}]
+                              </span>
+                            )}
                           </div>
-                          {log.details.before && (
-                            <div style={{ fontSize: "0.78rem", color: "#ef4444" }}>
-                              <strong>[변경 전]</strong> {JSON.stringify(log.details.before)}
-                            </div>
-                          )}
-                          {log.details.after && (
-                            <div style={{ fontSize: "0.78rem", color: "#0d9488", marginTop: 2 }}>
-                              <strong>[변경 후]</strong> {JSON.stringify(log.details.after)}
-                            </div>
-                          )}
+                          <span style={{ fontSize: "0.75rem", color: "#94a3b8", whiteSpace: "nowrap", flexShrink: 0 }}>
+                            {new Date(log.loggedAt).toLocaleString("ko-KR")}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  ))}
+
+                        {/* 신규 등록 요약 */}
+                        {isCreated && log.details && (
+                          <div style={{ fontSize: "0.82rem", color: "#334155", background: "#fff", padding: "10px 14px", borderRadius: 8, border: "1px solid #f1f5f9", display: "flex", flexWrap: "wrap", gap: 16 }}>
+                            {log.details.companyNm && <div><strong>업체명:</strong> {log.details.companyNm}</div>}
+                            {log.details.regDate && <div><strong>등록일자:</strong> {log.details.regDate}</div>}
+                            {log.details.action && <div style={{ color: "#0d9488" }}>{log.details.action}</div>}
+                          </div>
+                        )}
+
+                        {/* 항목 변경 내용 */}
+                        {!isCreated && log.details?.changedFields && (
+                          <div style={{ fontSize: "0.82rem", color: "#334155", marginTop: 8, background: "#fff", padding: "12px 14px", borderRadius: 8, border: "1px solid #f1f5f9" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                              <span style={{ fontWeight: 700, color: "#d97706" }}>변경 항목:</span>
+                              {log.details.changedFields.map(f => (
+                                <span key={f} style={{ background: "#fef3c7", color: "#b45309", padding: "2px 8px", borderRadius: 4, fontWeight: 700, fontSize: "0.74rem" }}>
+                                  {f}
+                                </span>
+                              ))}
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                              <div style={{ background: "#fef2f2", padding: "8px 12px", borderRadius: 6, border: "1px solid #fee2e2" }}>
+                                <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#ef4444", display: "block", marginBottom: 4 }}>[변경 전]</span>
+                                {typeof log.details.before === "object" && log.details.before !== null ? (
+                                  Object.entries(log.details.before).map(([k, v]) => (
+                                    <div key={k} style={{ fontSize: "0.8rem", color: "#7f1d1d", marginBottom: 2 }}>
+                                      <strong>{k}:</strong> {String(v || '-')}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div style={{ fontSize: "0.8rem", color: "#7f1d1d" }}>{String(log.details.before)}</div>
+                                )}
+                              </div>
+                              <div style={{ background: "#f0fdf4", padding: "8px 12px", borderRadius: 6, border: "1px solid #dcfce7" }}>
+                                <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#16a34a", display: "block", marginBottom: 4 }}>[변경 후]</span>
+                                {typeof log.details.after === "object" && log.details.after !== null ? (
+                                  Object.entries(log.details.after).map(([k, v]) => (
+                                    <div key={k} style={{ fontSize: "0.8rem", color: "#14532d", marginBottom: 2 }}>
+                                      <strong>{k}:</strong> {String(v || '-')}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div style={{ fontSize: "0.8rem", color: "#14532d" }}>{String(log.details.after)}</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
 
             <div style={{ padding: "12px 24px", borderTop: "1px solid #e2e8f0", background: "#f8fafc", textAlign: "right" }}>
-              <button onClick={() => setShowHistoryModal(false)} style={{ padding: "8px 18px", background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" }}>
-                확인
+              <button onClick={() => setShowHistoryModal(false)} style={{ padding: "8px 20px", background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" }}>
+                닫기
               </button>
             </div>
           </div>
