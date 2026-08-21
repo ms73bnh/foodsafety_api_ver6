@@ -48,9 +48,9 @@ function SheetModal({ data, selectedCompanies, onClose }) {
   };
 
   const handleExportCSV = () => {
-    const headers = ["순위", "품목보고번호", "품목명", "제조업소", "허가일자", "제형", "총합계(KG)", ...YEARS_10.map(y => y + "년(KG)")];
+    const headers = ["순위", "품목보고번호", "품목명", "제조업소", "허가일자", "총합계(KG)", ...YEARS_10.map(y => y + "년(KG)")];
     const rows = filteredProducts.map((p, i) => [
-      i + 1, p.prdlstReportNo, p.prdlstNm, p.bsshNm, p.prmsDt, p.dispos, p.total,
+      i + 1, p.prdlstReportNo, p.prdlstNm, p.bsshNm, p.prmsDt, p.total,
       ...YEARS_10.map(yr => p.yearly?.[yr] || 0)
     ]);
     const csv = [headers, ...rows].map(r => r.map(v => '"' + (v || "") + '"').join(",")).join("\n");
@@ -70,48 +70,58 @@ function SheetModal({ data, selectedCompanies, onClose }) {
   );
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#0f172a", zIndex: 9999, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ background: "#1e293b", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #334155", flexShrink: 0 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.6)", backdropFilter: "blur(6px)", zIndex: 9999, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ background: "#ffffff", padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e2e8f0", flexShrink: 0, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onClose} style={{ background: "none", border: "1px solid #475569", color: "#94a3b8", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: "0.8rem" }}>
+          <button onClick={onClose} style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", color: "#334155", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: "0.82rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s" }}>
             ← 3-Pane으로 돌아가기
           </button>
           <div>
-            <span style={{ color: "#0d9488", fontWeight: 800, fontSize: "1rem" }}>📊 심층 데이터 시트</span>
-            <span style={{ color: "#64748b", fontSize: "0.8rem", marginLeft: 10 }}>
+            <span style={{ color: "#0d9488", fontWeight: 900, fontSize: "1.1rem" }}>📊 심층 데이터 시트</span>
+            <span style={{ color: "#64748b", fontSize: "0.85rem", marginLeft: 10, fontWeight: 600 }}>
               {data?.ingredient?.name} {selectedCompanies.size > 0 && selectedCompanies.size < (data?.companies?.length || 0) ? "· " + selectedCompanies.size + "개 제조사 필터" : "· 전체 제조사"}
             </span>
           </div>
         </div>
-        <button onClick={handleExportCSV} style={{ padding: "7px 16px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 7, fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+        <button onClick={handleExportCSV} style={{ padding: "8px 18px", background: "linear-gradient(135deg, #0d9488, #0284c7)", color: "#fff", border: "none", borderRadius: 8, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 2px 8px rgba(13,148,136,0.25)" }}>
           📥 CSV 다운로드
         </button>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ color: "#e2e8f0", fontSize: "0.9rem", fontWeight: 800, marginBottom: 10 }}>📈 연도별 총 생산량 추이 (2016~2025)</h3>
+      <div style={{ flex: 1, overflow: "auto", padding: "24px 28px", background: "#f8fafc" }}>
+        {/* 연도별 총 생산량 추이 */}
+        <div style={{ marginBottom: 28, background: "#ffffff", padding: "20px", borderRadius: "12px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <h3 style={{ color: "#0f172a", fontSize: "0.95rem", fontWeight: 800, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "#0d9488" }}>📈</span> 연도별 총 생산량 추이 (2016~2025)
+          </h3>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", fontSize: "0.8rem", minWidth: "100%" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: "0.82rem", minWidth: "100%" }}>
               <thead>
-                <tr style={{ background: "#1e293b" }}>
-                  <th style={{ padding: "8px 14px", color: "#94a3b8", textAlign: "left", border: "1px solid #334155" }}>구분</th>
+                <tr style={{ background: "#f1f5f9" }}>
+                  <th style={{ padding: "10px 14px", color: "#475569", textAlign: "left", border: "1px solid #e2e8f0", fontWeight: 700 }}>구분</th>
                   {filteredYearly.map(y => (
-                    <th key={y.year} style={{ padding: "8px 12px", color: "#94a3b8", textAlign: "right", border: "1px solid #334155", minWidth: 90 }}>{y.year}년</th>
+                    <th key={y.year} style={{ padding: "10px 12px", color: "#475569", textAlign: "right", border: "1px solid #e2e8f0", minWidth: 85, fontWeight: 700 }}>{y.year}년</th>
                   ))}
-                  <th style={{ padding: "8px 12px", color: "#0d9488", textAlign: "right", border: "1px solid #334155", fontWeight: 800 }}>합계</th>
+                  <th style={{ padding: "10px 12px", color: "#0d9488", textAlign: "right", border: "1px solid #e2e8f0", fontWeight: 900, background: "rgba(13, 148, 136, 0.06)" }}>합계</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td style={{ padding: "10px 14px", color: "#0d9488", fontWeight: 800, border: "1px solid #334155", background: "#0f2d2d" }}>생산량(KG)</td>
+                  <td style={{ padding: "11px 14px", color: "#0d9488", fontWeight: 800, border: "1px solid #e2e8f0", background: "rgba(13, 148, 136, 0.04)" }}>생산량(KG)</td>
                   {filteredYearly.map(y => (
-                    <td key={y.year} style={{ padding: "10px 12px", color: y.amount > 0 ? "#e2e8f0" : "#475569", fontWeight: y.amount > 0 ? 700 : 400, textAlign: "right", border: "1px solid #334155" }}>
-                      {y.amount > 0 ? y.amount.toLocaleString() : "-"}
+                    <td 
+                      key={y.year} 
+                      title={y.amount > 0 ? `${y.amount.toLocaleString()} KG` : '-'}
+                      style={{ padding: "11px 12px", color: y.amount > 0 ? "#0f172a" : "#cbd5e1", fontWeight: y.amount > 0 ? 700 : 400, textAlign: "right", border: "1px solid #e2e8f0", background: "#ffffff", cursor: y.amount > 0 ? "default" : "inherit" }}
+                    >
+                      {y.amount > 0 ? Math.round(y.amount).toLocaleString() : "-"}
                     </td>
                   ))}
-                  <td style={{ padding: "10px 12px", color: "#0d9488", fontWeight: 800, textAlign: "right", border: "1px solid #334155", background: "#0f2d2d" }}>
-                    {totalSelected.toLocaleString()}
+                  <td 
+                    title={`${totalSelected.toLocaleString()} KG`}
+                    style={{ padding: "11px 12px", color: "#0d9488", fontWeight: 900, textAlign: "right", border: "1px solid #e2e8f0", background: "rgba(13, 148, 136, 0.08)", cursor: "default" }}
+                  >
+                    {Math.round(totalSelected).toLocaleString()}
                   </td>
                 </tr>
               </tbody>
@@ -119,31 +129,39 @@ function SheetModal({ data, selectedCompanies, onClose }) {
           </div>
         </div>
 
+        {/* 주요 OEM/ODM 제조사 랭킹 */}
         {filteredCompanies.length > 0 && (
-          <div style={{ marginBottom: 24 }}>
-            <h3 style={{ color: "#e2e8f0", fontSize: "0.9rem", fontWeight: 800, marginBottom: 10 }}>🏭 주요 OEM/ODM 제조사 생산 랭킹 (선택된 {filteredCompanies.length}개사)</h3>
+          <div style={{ marginBottom: 28, background: "#ffffff", padding: "20px", borderRadius: "12px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <h3 style={{ color: "#0f172a", fontSize: "0.95rem", fontWeight: 800, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "#0284c7" }}>🏭</span> 주요 OEM/ODM 제조사 생산 랭킹 (선택된 {filteredCompanies.length}개사)
+            </h3>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", fontSize: "0.8rem", minWidth: 600 }}>
+              <table style={{ borderCollapse: "collapse", fontSize: "0.82rem", minWidth: 650, width: "100%" }}>
                 <thead>
-                  <tr style={{ background: "#1e293b" }}>
-                    <th style={{ padding: "8px 12px", color: "#94a3b8", textAlign: "center", border: "1px solid #334155", width: 50 }}>순위</th>
-                    <th style={{ padding: "8px 14px", color: "#94a3b8", textAlign: "left", border: "1px solid #334155" }}>제조업소명</th>
-                    <th style={{ padding: "8px 12px", color: "#94a3b8", textAlign: "right", border: "1px solid #334155" }}>품목 수</th>
-                    <th style={{ padding: "8px 12px", color: "#94a3b8", textAlign: "right", border: "1px solid #334155" }}>총 생산량(KG)</th>
-                    <th style={{ padding: "8px 12px", color: "#94a3b8", textAlign: "right", border: "1px solid #334155" }}>시장 점유율(%)</th>
+                  <tr style={{ background: "#f1f5f9" }}>
+                    <th style={{ padding: "10px 12px", color: "#475569", textAlign: "center", border: "1px solid #e2e8f0", width: 55, fontWeight: 700 }}>순위</th>
+                    <th style={{ padding: "10px 14px", color: "#475569", textAlign: "left", border: "1px solid #e2e8f0", fontWeight: 700 }}>제조업소명</th>
+                    <th style={{ padding: "10px 12px", color: "#475569", textAlign: "right", border: "1px solid #e2e8f0", width: 100, fontWeight: 700 }}>품목 수</th>
+                    <th style={{ padding: "10px 12px", color: "#475569", textAlign: "right", border: "1px solid #e2e8f0", width: 140, fontWeight: 700 }}>총 생산량(KG)</th>
+                    <th style={{ padding: "10px 14px", color: "#475569", textAlign: "right", border: "1px solid #e2e8f0", width: 150, fontWeight: 700 }}>시장 점유율(%)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCompanies.map((c, i) => (
-                    <tr key={c.name}>
-                      <td style={{ padding: "9px 12px", textAlign: "center", color: "#64748b", fontWeight: 700, border: "1px solid #334155" }}>{i + 1}</td>
-                      <td style={{ padding: "9px 14px", color: "#e2e8f0", fontWeight: 700, border: "1px solid #334155" }}>{c.name}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "#94a3b8", border: "1px solid #334155" }}>{c.productCount.toLocaleString()}개</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "#0d9488", fontWeight: 700, border: "1px solid #334155" }}>{c.total.toLocaleString()}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", border: "1px solid #334155" }}>
-                        <span style={{ color: "#f59e0b", fontWeight: 800 }}>{c.share}%</span>
-                        <div style={{ marginTop: 3, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
-                          <div style={{ width: Math.min(c.share, 100) + "%", height: "100%", background: COLORS[i % COLORS.length], borderRadius: 2 }} />
+                    <tr key={c.name} style={{ background: i % 2 === 0 ? "#ffffff" : "#fbfcfe" }}>
+                      <td style={{ padding: "10px 12px", textAlign: "center", color: "#64748b", fontWeight: 800, border: "1px solid #e2e8f0" }}>{i + 1}</td>
+                      <td style={{ padding: "10px 14px", color: "#0f172a", fontWeight: 700, border: "1px solid #e2e8f0" }}>{c.name}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: "#64748b", border: "1px solid #e2e8f0", fontWeight: 600 }}>{c.productCount.toLocaleString()}개</td>
+                      <td 
+                        title={c.total > 0 ? `${c.total.toLocaleString()} KG` : ''}
+                        style={{ padding: "10px 12px", textAlign: "right", color: "#0d9488", fontWeight: 800, border: "1px solid #e2e8f0", cursor: c.total > 0 ? "default" : "inherit" }}
+                      >
+                        {c.total > 0 ? Math.round(c.total).toLocaleString() : "-"}
+                      </td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", border: "1px solid #e2e8f0" }}>
+                        <span style={{ color: "#d97706", fontWeight: 800 }}>{c.share}%</span>
+                        <div style={{ marginTop: 4, height: 5, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ width: Math.min(c.share, 100) + "%", height: "100%", background: COLORS[i % COLORS.length], borderRadius: 3 }} />
                         </div>
                       </td>
                     </tr>
@@ -154,25 +172,27 @@ function SheetModal({ data, selectedCompanies, onClose }) {
           </div>
         )}
 
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <h3 style={{ color: "#e2e8f0", fontSize: "0.9rem", fontWeight: 800, margin: 0 }}>📋 완제품 허가일자 타임라인 & 10개년 생산실적 매트릭스 ({filteredProducts.length}건)</h3>
-            <span style={{ color: "#64748b", fontSize: "0.75rem" }}>컬럼 클릭 시 정렬 / 제형 열까지 고정</span>
+        {/* 완제품 허가일자 타임라인 & 10개년 생산실적 매트릭스 */}
+        <div style={{ background: "#ffffff", padding: "20px", borderRadius: "12px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <h3 style={{ color: "#0f172a", fontSize: "0.95rem", fontWeight: 800, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "#7c3aed" }}>📋</span> 완제품 허가일자 타임라인 & 10개년 생산실적 매트릭스 ({filteredProducts.length}건)
+            </h3>
+            <span style={{ color: "#64748b", fontSize: "0.75rem", fontWeight: 600 }}>* 컬럼 클릭 시 정렬 / 허가일자 열까지 고정</span>
           </div>
-          <div style={{ overflowX: "auto", maxHeight: "calc(100vh - 520px)" }}>
-            <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: "0.78rem", minWidth: 1400 }}>
+          <div style={{ overflowX: "auto", maxHeight: "calc(100vh - 480px)" }}>
+            <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: "0.78rem", minWidth: 1350, width: "100%" }}>
               <thead>
-                <tr style={{ background: "#1e293b", position: "sticky", top: 0, zIndex: 10 }}>
-                  <th style={{ position: "sticky", left: 0, zIndex: 15, background: "#1e293b", padding: "10px 10px", textAlign: "center", width: 45, minWidth: 45, border: "1px solid #334155", color: "#94a3b8" }}>순위</th>
-                  <th style={{ position: "sticky", left: 45, zIndex: 15, background: "#1e293b", padding: "10px 14px", textAlign: "left", width: 210, minWidth: 210, border: "1px solid #334155", color: "#94a3b8" }}>품목명 / 보고번호</th>
-                  <th style={{ position: "sticky", left: 255, zIndex: 15, background: "#1e293b", padding: "10px 12px", textAlign: "left", width: 140, minWidth: 140, border: "1px solid #334155", color: "#94a3b8" }}>제조업소</th>
-                  <th style={{ position: "sticky", left: 395, zIndex: 15, background: "#1e293b", padding: "10px 10px", textAlign: "center", width: 90, minWidth: 90, border: "1px solid #334155", color: "#94a3b8" }}>허가일자</th>
-                  <th style={{ position: "sticky", left: 485, zIndex: 15, background: "#1e293b", padding: "10px 8px", textAlign: "center", width: 70, minWidth: 70, border: "1px solid #334155", borderRight: "2px solid #0d9488", color: "#94a3b8" }}>제형</th>
-                  <th onClick={() => handleSort("total")} style={{ padding: "10px 12px", textAlign: "right", width: 110, minWidth: 110, background: "#0f2d2d", color: "#0d9488", fontWeight: 800, border: "1px solid #334155", cursor: "pointer", whiteSpace: "nowrap" }}>
+                <tr style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                  <th style={{ position: "sticky", left: 0, zIndex: 15, background: "#f1f5f9", padding: "10px 10px", textAlign: "center", width: 50, minWidth: 50, border: "1px solid #e2e8f0", color: "#475569", fontWeight: 700 }}>순위</th>
+                  <th style={{ position: "sticky", left: 50, zIndex: 15, background: "#f1f5f9", padding: "10px 14px", textAlign: "left", width: 250, minWidth: 250, border: "1px solid #e2e8f0", color: "#475569", fontWeight: 700 }}>품목명 / 보고번호</th>
+                  <th style={{ position: "sticky", left: 300, zIndex: 15, background: "#f1f5f9", padding: "10px 12px", textAlign: "left", width: 170, minWidth: 170, border: "1px solid #e2e8f0", color: "#475569", fontWeight: 700 }}>제조업소</th>
+                  <th style={{ position: "sticky", left: 470, zIndex: 15, background: "#f1f5f9", padding: "10px 10px", textAlign: "center", width: 100, minWidth: 100, border: "1px solid #e2e8f0", borderRight: "2px solid #0d9488", color: "#475569", fontWeight: 700 }}>허가일자</th>
+                  <th onClick={() => handleSort("total")} style={{ padding: "10px 12px", textAlign: "right", width: 110, minWidth: 110, background: "rgba(13, 148, 136, 0.08)", color: "#0d9488", fontWeight: 800, border: "1px solid #e2e8f0", cursor: "pointer", whiteSpace: "nowrap" }}>
                     총합계<SortIcon col="total" />
                   </th>
                   {YEARS_10.map(yr => (
-                    <th key={yr} onClick={() => handleSort(yr)} style={{ padding: "10px 8px", textAlign: "right", width: 80, minWidth: 80, border: "1px solid #334155", color: "#94a3b8", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    <th key={yr} onClick={() => handleSort(yr)} style={{ padding: "10px 8px", textAlign: "right", width: 75, minWidth: 75, background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#475569", cursor: "pointer", whiteSpace: "nowrap", fontWeight: 700 }}>
                       {yr}년<SortIcon col={yr} />
                     </th>
                   ))}
@@ -180,28 +200,36 @@ function SheetModal({ data, selectedCompanies, onClose }) {
               </thead>
               <tbody>
                 {filteredProducts.map((prod, idx) => {
-                  const rowBg = idx % 2 === 0 ? "#0f172a" : "#111827";
+                  const rowBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
                   return (
                     <tr key={prod.prdlstReportNo}>
-                      <td style={{ position: "sticky", left: 0, zIndex: 5, background: rowBg, padding: "9px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, border: "1px solid #1e293b" }}>{idx + 1}</td>
-                      <td title={prod.prdlstNm} style={{ position: "sticky", left: 45, zIndex: 5, background: rowBg, padding: "9px 14px", maxWidth: 210, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", border: "1px solid #1e293b" }}>
-                        <Link href={"/detail/" + prod.prdlstReportNo} style={{ color: "#38bdf8", fontWeight: 700, textDecoration: "none" }} title={prod.prdlstNm}>{prod.prdlstNm}</Link>
-                        <div style={{ fontSize: "0.66rem", color: "#475569", fontFamily: "monospace" }}>{prod.prdlstReportNo}</div>
+                      <td style={{ position: "sticky", left: 0, zIndex: 5, background: rowBg, padding: "9px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, border: "1px solid #e2e8f0" }}>{idx + 1}</td>
+                      <td title={prod.prdlstNm} style={{ position: "sticky", left: 50, zIndex: 5, background: rowBg, padding: "9px 14px", maxWidth: 250, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", border: "1px solid #e2e8f0" }}>
+                        <Link href={"/detail/" + prod.prdlstReportNo} style={{ color: "#0284c7", fontWeight: 800, textDecoration: "none" }} title={prod.prdlstNm}>{prod.prdlstNm}</Link>
+                        <div style={{ fontSize: "0.66rem", color: "#94a3b8", fontFamily: "monospace" }}>{prod.prdlstReportNo}</div>
                       </td>
-                      <td title={prod.bsshNm || "-"} style={{ position: "sticky", left: 255, zIndex: 5, background: rowBg, padding: "9px 12px", maxWidth: 140, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#cbd5e1", border: "1px solid #1e293b" }}>{prod.bsshNm || "-"}</td>
-                      <td style={{ position: "sticky", left: 395, zIndex: 5, background: rowBg, padding: "9px 10px", textAlign: "center", color: "#94a3b8", fontSize: "0.72rem", border: "1px solid #1e293b" }}>{prod.prmsDt || "-"}</td>
-                      <td style={{ position: "sticky", left: 485, zIndex: 5, background: rowBg, padding: "9px 8px", textAlign: "center", color: "#94a3b8", border: "1px solid #1e293b", borderRight: "2px solid #0d9488" }}>{prod.dispos || "-"}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", fontWeight: 800, color: "#0d9488", background: "#0f2d2d", border: "1px solid #1e293b" }}>{prod.total > 0 ? prod.total.toLocaleString() : "-"}</td>
+                      <td title={prod.bsshNm || "-"} style={{ position: "sticky", left: 300, zIndex: 5, background: rowBg, padding: "9px 12px", maxWidth: 170, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#334155", fontWeight: 600, border: "1px solid #e2e8f0" }}>{prod.bsshNm || "-"}</td>
+                      <td style={{ position: "sticky", left: 470, zIndex: 5, background: rowBg, padding: "9px 10px", textAlign: "center", color: "#64748b", fontSize: "0.72rem", border: "1px solid #e2e8f0", borderRight: "2px solid #0d9488" }}>{prod.prmsDt || "-"}</td>
+                      <td 
+                        title={prod.total > 0 ? `${prod.total.toLocaleString()} KG` : '0 KG'}
+                        style={{ padding: "9px 12px", textAlign: "right", fontWeight: 800, color: "#0d9488", background: "rgba(13, 148, 136, 0.04)", border: "1px solid #e2e8f0", cursor: "default" }}
+                      >
+                        {prod.total > 0 ? Math.round(prod.total).toLocaleString() : "-"}
+                      </td>
                       {YEARS_10.map(yr => (
-                        <td key={yr} style={{ padding: "9px 8px", textAlign: "right", color: prod.yearly?.[yr] ? "#e2e8f0" : "#334155", fontWeight: prod.yearly?.[yr] ? 600 : 400, border: "1px solid #1e293b" }}>
-                          {prod.yearly?.[yr] ? prod.yearly[yr].toLocaleString() : "-"}
+                        <td 
+                          key={yr} 
+                          title={prod.yearly?.[yr] ? `${prod.yearly[yr].toLocaleString()} KG` : '-'}
+                          style={{ padding: "9px 8px", textAlign: "right", color: prod.yearly?.[yr] ? "#0f172a" : "#cbd5e1", fontWeight: prod.yearly?.[yr] ? 700 : 400, border: "1px solid #e2e8f0", cursor: prod.yearly?.[yr] ? "default" : "inherit" }}
+                        >
+                          {prod.yearly?.[yr] ? Math.round(prod.yearly[yr]).toLocaleString() : "-"}
                         </td>
                       ))}
                     </tr>
                   );
                 })}
                 {filteredProducts.length === 0 && (
-                  <tr><td colSpan={16} style={{ padding: 40, textAlign: "center", color: "#475569", border: "1px solid #1e293b" }}>선택된 조건에 해당하는 데이터가 없습니다.</td></tr>
+                  <tr><td colSpan={15} style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px solid #e2e8f0" }}>선택된 조건에 해당하는 데이터가 없습니다.</td></tr>
                 )}
               </tbody>
             </table>
@@ -403,7 +431,9 @@ function DrilldownPane({ ingredientsList }) {
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#64748b", marginTop: 1 }}>
                           <span>{comp.productCount}개 품목</span>
-                          <span style={{ color: "#0284c7" }}>{comp.total > 0 ? comp.total.toLocaleString() : "-"} KG</span>
+                          <span title={comp.total > 0 ? `${comp.total.toLocaleString()} KG` : ''} style={{ color: "#0284c7", cursor: comp.total > 0 ? "default" : "inherit" }}>
+                            {comp.total > 0 ? Math.round(comp.total).toLocaleString() : "-"} KG
+                          </span>
                         </div>
                         <div style={{ marginTop: 5, height: 3, background: "#f1f5f9", borderRadius: 2 }}>
                           <div style={{ width: Math.min((comp.total / shareMax) * 100, 100) + "%", height: "100%", background: COLORS[idx % COLORS.length], borderRadius: 2, transition: "width 0.3s" }} />
@@ -459,11 +489,11 @@ function DrilldownPane({ ingredientsList }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
                 {[
                   { label: "선택 품목 수", value: filteredProducts.length, unit: "개", color: "#0d9488" },
-                  { label: "누적 생산량(KG)", value: Math.round(filteredTotal).toLocaleString(), unit: "KG", color: "#0284c7" },
+                  { label: "누적 생산량(KG)", value: Math.round(filteredTotal).toLocaleString(), tooltip: `${filteredTotal.toLocaleString()} KG`, unit: "KG", color: "#0284c7" },
                   { label: "선택 제조사", value: selectedCompanies.size, unit: "개사", color: "#7c3aed" },
                   { label: "CAGR", value: drillData.stats?.cagr > 0 ? "+" + drillData.stats.cagr : drillData.stats?.cagr || 0, unit: "%", color: "#f59e0b" },
                 ].map(kpi => (
-                  <div key={kpi.label} style={{ background: "#f8fafc", borderRadius: 8, padding: "12px 14px", borderLeft: "3px solid " + kpi.color }}>
+                  <div key={kpi.label} title={kpi.tooltip || ""} style={{ background: "#f8fafc", borderRadius: 8, padding: "12px 14px", borderLeft: "3px solid " + kpi.color, cursor: kpi.tooltip ? "default" : "inherit" }}>
                     <div style={{ fontSize: "0.7rem", color: "#64748b", fontWeight: 700 }}>{kpi.label}</div>
                     <div style={{ fontSize: "1.3rem", fontWeight: 900, color: kpi.color, marginTop: 2 }}>
                       {kpi.value}<span style={{ fontSize: "0.75rem", fontWeight: 500, color: "#64748b" }}> {kpi.unit}</span>
@@ -484,8 +514,8 @@ function DrilldownPane({ ingredientsList }) {
                       <div key={y.year} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end", position: "relative" }}
                         onMouseEnter={() => setHoveredBar(y.year)} onMouseLeave={() => setHoveredBar(null)}>
                         {isHov && (
-                          <div style={{ position: "absolute", bottom: h + 8 + "%", left: "50%", transform: "translateX(-50%)", background: "#0f172a", color: "#fff", padding: "2px 6px", borderRadius: 4, fontSize: "0.62rem", fontWeight: 800, whiteSpace: "nowrap", zIndex: 5 }}>
-                            {y.year}: {y.amount.toLocaleString()}
+                          <div style={{ position: "absolute", bottom: h + 8 + "%", left: "50%", transform: "translateX(-50%)", background: "#0f172a", color: "#fff", padding: "3px 8px", borderRadius: 4, fontSize: "0.65rem", fontWeight: 800, whiteSpace: "nowrap", zIndex: 5, boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
+                            {y.year}년: {Math.round(y.amount).toLocaleString()} KG ({y.amount.toLocaleString()} KG)
                           </div>
                         )}
                         <div style={{ width: "100%", height: h + "%", background: isHov ? "#0284c7" : y.amount > 0 ? "#0d9488" : "#e2e8f0", borderRadius: "2px 2px 0 0", transition: "all 0.15s" }} />
@@ -503,7 +533,7 @@ function DrilldownPane({ ingredientsList }) {
                       <div key={comp.name}>
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", fontWeight: 700, color: "#334155", marginBottom: 3 }}>
                           <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={comp.name}>{idx + 1}. {comp.name}</span>
-                          <span style={{ color: COLORS[idx % COLORS.length] }}>{comp.share}%</span>
+                          <span style={{ color: COLORS[idx % COLORS.length] }}>{comp.share}% ({Math.round(comp.total).toLocaleString()} KG)</span>
                         </div>
                         <div style={{ height: 6, background: "#e2e8f0", borderRadius: 3 }}>
                           <div style={{ width: Math.min(comp.share, 100) + "%", height: "100%", background: COLORS[idx % COLORS.length], borderRadius: 3 }} />
@@ -795,7 +825,7 @@ export default function AnalyticsReportPage() {
                   <div style={{ padding: "16px 22px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <h3 style={{ fontSize: "0.95rem", fontWeight: 800, color: "#0f172a", margin: 0 }}>해당 원료 함유 완제품 생산실적 랭킹 (Top 50)</h3>
-                      <p style={{ fontSize: "0.75rem", color: "#64748b", margin: "2px 0 0" }}>※ 제형 열까지 좌측 고정 / 우측 2025~2016년 생산량(KG) 가로 스크롤</p>
+                      <p style={{ fontSize: "0.75rem", color: "#64748b", margin: "2px 0 0" }}>※ 제조업소 열까지 좌측 고정 / 우측 2025~2016년 생산량(KG) 가로 스크롤</p>
                     </div>
                     <span style={{ fontSize: "0.75rem", color: "#0d9488", fontWeight: 700, background: "#f0fdfa", padding: "4px 10px", borderRadius: 6 }}>단위: KG</span>
                   </div>
@@ -804,9 +834,8 @@ export default function AnalyticsReportPage() {
                       <thead>
                         <tr style={{ background: "#f8fafc", color: "#475569", position: "sticky", top: 0, zIndex: 10 }}>
                           <th style={{ position: "sticky", left: 0, zIndex: 12, background: "#f8fafc", padding: "12px 10px", textAlign: "center", width: 45, minWidth: 45, borderBottom: "2px solid #cbd5e1" }}>순위</th>
-                          <th style={{ position: "sticky", left: 45, zIndex: 12, background: "#f8fafc", padding: "12px 14px", textAlign: "left", width: 220, minWidth: 220, borderBottom: "2px solid #cbd5e1" }}>품목명(제품명) / 보고번호</th>
-                          <th style={{ position: "sticky", left: 265, zIndex: 12, background: "#f8fafc", padding: "12px 12px", textAlign: "left", width: 140, minWidth: 140, borderBottom: "2px solid #cbd5e1" }}>제조업소</th>
-                          <th style={{ position: "sticky", left: 405, zIndex: 12, background: "#f8fafc", padding: "12px 10px", textAlign: "center", width: 75, minWidth: 75, borderBottom: "2px solid #cbd5e1", borderRight: "2px solid #cbd5e1" }}>제형</th>
+                          <th style={{ position: "sticky", left: 45, zIndex: 12, background: "#f8fafc", padding: "12px 14px", textAlign: "left", width: 240, minWidth: 240, borderBottom: "2px solid #cbd5e1" }}>품목명(제품명) / 보고번호</th>
+                          <th style={{ position: "sticky", left: 285, zIndex: 12, background: "#f8fafc", padding: "12px 12px", textAlign: "left", width: 170, minWidth: 170, borderBottom: "2px solid #cbd5e1", borderRight: "2px solid #0d9488" }}>제조업소</th>
                           <th style={{ padding: "12px 12px", textAlign: "right", width: 110, minWidth: 110, background: "#f0fdfa", color: "#0d9488", fontWeight: 800, borderBottom: "2px solid #cbd5e1" }}>총 합계</th>
                           {YEARS_10.map(yr => <th key={yr} style={{ padding: "12px 10px", textAlign: "right", width: 85, minWidth: 85, borderBottom: "2px solid #cbd5e1" }}>{yr}년</th>)}
                         </tr>
@@ -815,16 +844,24 @@ export default function AnalyticsReportPage() {
                         {reportData.topProducts?.map((prod, idx) => (
                           <tr key={prod.prdlstReportNo} style={{ borderBottom: "1px solid #f1f5f9" }}>
                             <td style={{ position: "sticky", left: 0, zIndex: 5, background: idx % 2 === 0 ? "#fff" : "#fcfcfd", padding: "10px 10px", textAlign: "center", color: "#94a3b8", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{idx + 1}</td>
-                            <td title={prod.prdlstNm} style={{ position: "sticky", left: 45, zIndex: 5, background: idx % 2 === 0 ? "#fff" : "#fcfcfd", padding: "10px 14px", maxWidth: 220, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderBottom: "1px solid #f1f5f9" }}>
+                            <td title={prod.prdlstNm} style={{ position: "sticky", left: 45, zIndex: 5, background: idx % 2 === 0 ? "#fff" : "#fcfcfd", padding: "10px 14px", maxWidth: 240, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderBottom: "1px solid #f1f5f9" }}>
                               <Link href={"/detail/" + prod.prdlstReportNo} style={{ color: "#0284c7", fontWeight: 700, textDecoration: "none" }} title={prod.prdlstNm}>{prod.prdlstNm}</Link>
                               <div style={{ fontSize: "0.7rem", color: "#94a3b8", fontFamily: "monospace" }}>{prod.prdlstReportNo}</div>
                             </td>
-                            <td title={prod.bsshNm || "-"} style={{ position: "sticky", left: 265, zIndex: 5, background: idx % 2 === 0 ? "#fff" : "#fcfcfd", padding: "10px 12px", maxWidth: 140, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{prod.bsshNm || "-"}</td>
-                            <td style={{ position: "sticky", left: 405, zIndex: 5, background: idx % 2 === 0 ? "#fff" : "#fcfcfd", padding: "10px 10px", textAlign: "center", color: "#64748b", borderBottom: "1px solid #f1f5f9", borderRight: "2px solid #cbd5e1" }}>{prod.dispos || "-"}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: "#0d9488", background: "#f0fdfa", borderBottom: "1px solid #f1f5f9" }}>{prod.total?.toLocaleString() || 0}</td>
+                            <td title={prod.bsshNm || "-"} style={{ position: "sticky", left: 285, zIndex: 5, background: idx % 2 === 0 ? "#fff" : "#fcfcfd", padding: "10px 12px", maxWidth: 170, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#334155", borderBottom: "1px solid #f1f5f9", borderRight: "2px solid #0d9488" }}>{prod.bsshNm || "-"}</td>
+                            <td 
+                              title={prod.total ? `${prod.total.toLocaleString()} KG` : '0 KG'}
+                              style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: "#0d9488", background: "#f0fdfa", borderBottom: "1px solid #f1f5f9", cursor: "default" }}
+                            >
+                              {prod.total ? Math.round(prod.total).toLocaleString() : "0"}
+                            </td>
                             {YEARS_10.map(yr => (
-                              <td key={yr} style={{ padding: "10px 10px", textAlign: "right", color: prod.yearly[yr] ? "#0f172a" : "#cbd5e1", fontWeight: prod.yearly[yr] ? 600 : 400, borderBottom: "1px solid #f1f5f9" }}>
-                                {prod.yearly[yr] ? prod.yearly[yr].toLocaleString() : "-"}
+                              <td 
+                                key={yr} 
+                                title={prod.yearly[yr] ? `${prod.yearly[yr].toLocaleString()} KG` : '-'}
+                                style={{ padding: "10px 10px", textAlign: "right", color: prod.yearly[yr] ? "#0f172a" : "#cbd5e1", fontWeight: prod.yearly[yr] ? 600 : 400, borderBottom: "1px solid #f1f5f9", cursor: prod.yearly[yr] ? "default" : "inherit" }}
+                              >
+                                {prod.yearly[yr] ? Math.round(prod.yearly[yr]).toLocaleString() : "-"}
                               </td>
                             ))}
                           </tr>

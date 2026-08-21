@@ -220,12 +220,19 @@ export default function ProductionListPage() {
                       <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>{item.bsshNm}</div>
                       <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }} title={item.hItemNm}>{item.hItemNm}</div>
                     </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontWeight: 800, color: 'var(--accent)', fontSize: '0.75rem', background: 'rgba(13, 148, 136, 0.02)' }}>
-                      {item.total?.toLocaleString() || '0'}
+                    <td 
+                      title={item.total ? `${item.total.toLocaleString()} KG` : '0 KG'}
+                      style={{ padding: '12px 16px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontWeight: 800, color: 'var(--accent)', fontSize: '0.75rem', background: 'rgba(13, 148, 136, 0.02)', cursor: 'default' }}
+                    >
+                      {item.total ? Math.round(item.total).toLocaleString() : '0'}
                     </td>
                     {years.map(y => (
-                      <td key={y} style={{ padding: '12px 4px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontWeight: 700, color: item.yearly[y] ? 'var(--accent-secondary)' : '#e2e8f0', fontSize: '0.7rem' }}>
-                        {item.yearly[y] ? item.yearly[y].toLocaleString() : '-'}
+                      <td 
+                        key={y} 
+                        title={item.yearly[y] ? `${item.yearly[y].toLocaleString()} KG` : '-'}
+                        style={{ padding: '12px 4px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontWeight: 700, color: item.yearly[y] ? 'var(--accent-secondary)' : '#e2e8f0', fontSize: '0.7rem', cursor: item.yearly[y] ? 'default' : 'inherit' }}
+                      >
+                        {item.yearly[y] ? Math.round(item.yearly[y]).toLocaleString() : '-'}
                       </td>
                     ))}
                   </tr>

@@ -2,7 +2,64 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { CATEGORIES_MASTER } from '@/lib/category_data';
 
-export const dynamic = 'force-dynamic';
+// 개별인정원료 매칭 헬퍼: 인정번호가 있으면 인정번호로 우선 매칭하고 없으면 원료명으로 fallback
+async function getMatchedDeclarations(targetIngredient) {
+  const recogNo = targetIngredient.recognitionNumber?.trim();
+  let matchedDeclarations = [];
+
+  if (recogNo) {
+    const match = recogNo.match(/(\d{4}[-\s]?\d+)/);
+    const coreRecogNo = match ? match[1].replace(/\s+/g, '') : recogNo;
+    const recogKeywords = Array.from(new Set([recogNo, coreRecogNo, `제${coreRecogNo}호`])).filter(Boolean);
+
+    matchedDeclarations = await prisma.declarations.findMany({
+      where: {
+        OR: recogKeywords.flatMap(kw => [
+          { indvRawmtrlNm: { contains: kw, mode: 'insensitive' } },
+          { rawmtrlNm: { contains: kw, mode: 'insensitive' } },
+          { primaryFnclty: { contains: kw, mode: 'insensitive' } }
+        ])
+      },
+      select: {
+        prdlstReportNo: true,
+        prdlstNm: true,
+        bsshNm: true,
+        dispos: true,
+        prmsDt: true,
+        primaryFnclty: true
+      }
+    });
+  }
+
+  // 인정번호로 매칭된 결과가 없으면 원료명으로 fallback 검색
+  if (matchedDeclarations.length === 0) {
+    const cleanName = (targetIngredient.name || '').replace(/\([^)]*\)/g, '').trim();
+    const rawKeywords = [cleanName, targetIngredient.name].filter(k => k && k.length >= 2);
+
+    if (rawKeywords.length > 0) {
+      matchedDeclarations = await prisma.declarations.findMany({
+        where: {
+          OR: rawKeywords.flatMap(kw => [
+            { indvRawmtrlNm: { contains: kw, mode: 'insensitive' } },
+            { rawmtrlNm: { contains: kw, mode: 'insensitive' } },
+            { prdlstNm: { contains: kw, mode: 'insensitive' } },
+            { primaryFnclty: { contains: kw, mode: 'insensitive' } }
+          ])
+        },
+        select: {
+          prdlstReportNo: true,
+          prdlstNm: true,
+          bsshNm: true,
+          dispos: true,
+          prmsDt: true,
+          primaryFnclty: true
+        }
+      });
+    }
+  }
+
+  return matchedDeclarations;
+}
 
 export async function GET(req) {
   try {
@@ -58,29 +115,8 @@ export async function GET(req) {
         return NextResponse.json({ success: false, error: '원료를 찾을 수 없습니다.' }, { status: 404 });
       }
 
-      // 원료명 클리닝 및 매칭 키워드 구성
-      const cleanName = (targetIngredient.name || '').replace(/\([^)]*\)/g, '').trim();
-      const rawKeywords = [cleanName, targetIngredient.name].filter(k => k && k.length >= 2);
-
-      // 해당 원료가 함유된 완제품 품목 검색 (declarations)
-      const matchedDeclarations = await prisma.declarations.findMany({
-        where: {
-          OR: rawKeywords.flatMap(kw => [
-            { indvRawmtrlNm: { contains: kw, mode: 'insensitive' } },
-            { rawmtrlNm: { contains: kw, mode: 'insensitive' } },
-            { prdlstNm: { contains: kw, mode: 'insensitive' } },
-            { primaryFnclty: { contains: kw, mode: 'insensitive' } }
-          ])
-        },
-        select: {
-          prdlstReportNo: true,
-          prdlstNm: true,
-          bsshNm: true,
-          dispos: true,
-          prmsDt: true,
-          primaryFnclty: true
-        }
-      });
+      // 해당 원료가 함유된 완제품 품목 검색 (인정번호 우선 매칭)
+      const matchedDeclarations = await getMatchedDeclarations(targetIngredient);
 
       const reportNos = Array.from(new Set(matchedDeclarations.map(d => d.prdlstReportNo))).filter(Boolean);
 
@@ -308,28 +344,8 @@ export async function GET(req) {
         return NextResponse.json({ success: false, error: '원료를 찾을 수 없습니다.' }, { status: 404 });
       }
 
-      const cleanName = (targetIngredient.name || '').replace(/\([^)]*\)/g, '').trim();
-      const rawKeywords = [cleanName, targetIngredient.name].filter(k => k && k.length >= 2);
-
-      // 해당 원료 함유 완제품 전체 조회
-      const matchedDeclarations = await prisma.declarations.findMany({
-        where: {
-          OR: rawKeywords.flatMap(kw => [
-            { indvRawmtrlNm: { contains: kw, mode: 'insensitive' } },
-            { rawmtrlNm: { contains: kw, mode: 'insensitive' } },
-            { prdlstNm: { contains: kw, mode: 'insensitive' } },
-            { primaryFnclty: { contains: kw, mode: 'insensitive' } }
-          ])
-        },
-        select: {
-          prdlstReportNo: true,
-          prdlstNm: true,
-          bsshNm: true,
-          dispos: true,
-          prmsDt: true,
-          primaryFnclty: true
-        }
-      });
+      // 해당 원료 함유 완제품 전체 조회 (인정번호 우선 매칭)
+      const matchedDeclarations = await getMatchedDeclarations(targetIngredient);
 
       const reportNos = Array.from(new Set(matchedDeclarations.map(d => d.prdlstReportNo))).filter(Boolean);
 

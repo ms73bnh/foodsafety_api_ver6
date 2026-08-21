@@ -426,7 +426,7 @@ export default function ProductionDashboard() {
                     <div style={{ width: `${(c.value / stats.companyRanking[0].value) * 100}%`, height: '100%', background: 'linear-gradient(90deg, #0d9488, #2dd4bf)', borderRadius: '3px' }}></div>
                   </div>
                 </div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--accent)', marginLeft: '8px' }}>{c.value?.toLocaleString()}</div>
+                <div title={c.value ? `${c.value.toLocaleString()} KG` : ''} style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--accent)', marginLeft: '8px', cursor: 'default' }}>{c.value ? Math.round(c.value).toLocaleString() : '0'}</div>
               </div>
             ))}
           </div>
@@ -448,7 +448,7 @@ export default function ProductionDashboard() {
                     <div style={{ width: `${(ing.value / stats.ingredientRanking[0].value) * 100}%`, height: '100%', background: 'linear-gradient(90deg, #0284c7, #38bdf8)', borderRadius: '3px' }}></div>
                   </div>
                 </div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0284c7', marginLeft: '8px' }}>{ing.value?.toLocaleString()}</div>
+                <div title={ing.value ? `${ing.value.toLocaleString()} KG` : ''} style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0284c7', marginLeft: '8px', cursor: 'default' }}>{ing.value ? Math.round(ing.value).toLocaleString() : '0'}</div>
               </div>
             ))}
           </div>
@@ -481,7 +481,7 @@ export default function ProductionDashboard() {
                   <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>{c.name}</div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ef4444' }}>+{c.growthRate?.toFixed(1)}%</div>
-                    <div style={{ fontSize: '0.6rem', color: '#94a3b8' }}>+{c.diff?.toLocaleString()} KG</div>
+                    <div title={c.diff ? `+${c.diff.toLocaleString()} KG` : ''} style={{ fontSize: '0.6rem', color: '#94a3b8', cursor: 'default' }}>+{c.diff ? Math.round(c.diff).toLocaleString() : '0'} KG</div>
                   </div>
                 </div>
               ))}
@@ -498,7 +498,7 @@ export default function ProductionDashboard() {
                   <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>{c.name}</div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#3b82f6' }}>{c.growthRate?.toFixed(1)}%</div>
-                    <div style={{ fontSize: '0.6rem', color: '#94a3b8' }}>{c.diff?.toLocaleString()} KG</div>
+                    <div title={c.diff ? `${c.diff.toLocaleString()} KG` : ''} style={{ fontSize: '0.6rem', color: '#94a3b8', cursor: 'default' }}>{c.diff ? Math.round(c.diff).toLocaleString() : '0'} KG</div>
                   </div>
                 </div>
               ))}
