@@ -35,6 +35,9 @@ export default function CommitteePage() {
     },
   ]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [remaining, setRemaining] = useState(20); // 오늘 남은 질문 횟수
+  const [cooldown, setCooldown] = useState(0);    // 쿨다운 카운트다운(초)
+  const cooldownRef = useRef(null);
   const chatEndRef = useRef(null);
 
   // 안건 데이터 조회
@@ -94,10 +97,22 @@ export default function CommitteePage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 쿨다운 타이머 시작 (2초)
+  const startCooldown = () => {
+    setCooldown(2);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownRef.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
   // 챗봇 질문 전송 (RAG 스트리밍)
   const handleSendChat = async (questionText) => {
     const q = questionText || chatInput;
-    if (!q || !q.trim() || chatLoading) return;
+    if (!q || !q.trim() || chatLoading || cooldown > 0) return;
 
     setChatInput("");
     const newMessages = [
@@ -115,9 +130,22 @@ export default function CommitteePage() {
         body: JSON.stringify({ question: q }),
       });
 
-      if (!response.ok) {
-        throw new Error("서버 응답 오류");
+      // 429 Rate Limit 처리
+      if (response.status === 429) {
+        const errJson = await response.json();
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            content: `⚠️ ${errJson.error || "질문 횟수 한도에 도달했습니다."}`,
+          };
+          return updated;
+        });
+        setRemaining(0);
+        return;
       }
+
+      if (!response.ok) throw new Error("서버 응답 오류");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -135,7 +163,12 @@ export default function CommitteePage() {
           for (const p of parts) {
             if (p.startsWith("__REF__:")) {
               try {
-                refs = JSON.parse(p.substring(8));
+                const parsed = JSON.parse(p.substring(8));
+                // 새 포맷: { refs, remaining }
+                refs = parsed.refs ?? parsed;
+                if (typeof parsed.remaining === "number") {
+                  setRemaining(parsed.remaining);
+                }
               } catch (e) {}
             } else {
               streamedText += p;
@@ -146,23 +179,24 @@ export default function CommitteePage() {
           streamedText += chunk;
         }
 
-        setMessages((prev) => {
+        setMessages(prev => {
           const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          updated[lastIdx] = {
-            ...updated[lastIdx],
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
             content: streamedText,
             references: refs,
           };
           return updated;
         });
       }
+
+      // 전송 성공 후 쿨다운 시작
+      startCooldown();
     } catch (err) {
-      setMessages((prev) => {
+      setMessages(prev => {
         const updated = [...prev];
-        const lastIdx = updated.length - 1;
-        updated[lastIdx] = {
-          ...updated[lastIdx],
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
           content: `답변 생성 중 오류가 발생했습니다: ${err.message}`,
         };
         return updated;
@@ -197,7 +231,7 @@ export default function CommitteePage() {
             </h1>
           </div>
           <p style={{ color: "#64748b", fontSize: "0.85rem", margin: 0 }}>
-            식약처 주요위원회 심의 결과(인정 / 보완 / 불인정) 공시 데이터 및 **Gemini 2.0 Flash RAG 질의응답 (100% 무료)**
+            식약처 주요위원회 심의 결과(인정 / 보완 / 불인정) 공시 데이터 및 Gemini 3.6 Flash RAG 질의응답 (무료 · 1인 일 20회 한도)
           </p>
         </div>
 
@@ -253,10 +287,15 @@ export default function CommitteePage() {
               <i className="fa-solid fa-robot" style={{ color: "#38bdf8", fontSize: "1.1rem" }} />
               <div>
                 <strong style={{ fontSize: "0.95rem" }}>심의위원회 RAG AI 도우미</strong>
-                <span style={{ marginLeft: 8, fontSize: "0.68rem", background: "rgba(56,189,248,0.2)", color: "#38bdf8", padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>Gemini 2.0 Flash</span>
+                <span style={{ marginLeft: 8, fontSize: "0.68rem", background: "rgba(56,189,248,0.2)", color: "#38bdf8", padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>Gemini 3.6 Flash</span>
               </div>
             </div>
-            <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>100% 무료 질의응답</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+              <span style={{ fontSize: "0.7rem", color: remaining > 5 ? "#4ade80" : remaining > 0 ? "#fbbf24" : "#f87171", fontWeight: 700 }}>
+                오늘 남은 질문: {remaining}회
+              </span>
+              <span style={{ fontSize: "0.66rem", color: "#94a3b8" }}>일 최대 20회 (무료)</span>
+            </div>
           </div>
 
           {/* 챗봇 메시지 영역 */}
@@ -322,27 +361,52 @@ export default function CommitteePage() {
           </div>
 
           {/* 챗봇 입력창 */}
-          <div style={{ padding: "12px 16px", borderTop: "1px solid #e2e8f0", background: "#fff", display: "flex", gap: 8 }}>
-            <input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendChat()}
-              placeholder="심의위원회 회의록 관련 질문을 입력하세요... (예: 피치세라마이드 보완 사유)"
-              disabled={chatLoading}
-              style={{ flex: 1, padding: "10px 14px", border: "1px solid #cbd5e1", borderRadius: 10, fontSize: "0.84rem", outline: "none" }}
-            />
-            <button
-              onClick={() => handleSendChat()}
-              disabled={chatLoading || !chatInput.trim()}
-              style={{
-                padding: "10px 18px", background: chatLoading || !chatInput.trim() ? "#94a3b8" : "#0284c7",
-                color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem",
-                cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6
-              }}
-            >
-              {chatLoading ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-paper-plane" />}
-              전송
-            </button>
+          <div style={{ padding: "12px 16px", borderTop: "1px solid #e2e8f0", background: "#fff" }}>
+            {/* 남은 횟수 & 쿨다운 안내 */}
+            {(cooldown > 0 || remaining <= 5) && (
+              <div style={{ marginBottom: 6, fontSize: "0.74rem", display: "flex", justifyContent: "space-between" }}>
+                {cooldown > 0 && (
+                  <span style={{ color: "#64748b" }}>
+                    <i className="fa-solid fa-clock" style={{ marginRight: 4 }} />
+                    다음 질문까지 {cooldown}초 대기
+                  </span>
+                )}
+                {remaining <= 5 && remaining > 0 && (
+                  <span style={{ color: "#d97706", fontWeight: 700, marginLeft: "auto" }}>
+                    ⚠️ 오늘 {remaining}회 남음
+                  </span>
+                )}
+                {remaining === 0 && (
+                  <span style={{ color: "#dc2626", fontWeight: 700, marginLeft: "auto" }}>
+                    오늘 질문 한도 소진 — 내일 다시 이용 가능합니다
+                  </span>
+                )}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendChat()}
+                placeholder="심의위원회 회의록 관련 질문을 입력하세요... (예: 피치세라마이드 보완 사유)"
+                disabled={chatLoading || cooldown > 0 || remaining === 0}
+                style={{ flex: 1, padding: "10px 14px", border: "1px solid #cbd5e1", borderRadius: 10, fontSize: "0.84rem", outline: "none", opacity: remaining === 0 ? 0.5 : 1 }}
+              />
+              <button
+                onClick={() => handleSendChat()}
+                disabled={chatLoading || !chatInput.trim() || cooldown > 0 || remaining === 0}
+                style={{
+                  padding: "10px 18px",
+                  background: chatLoading || !chatInput.trim() || cooldown > 0 || remaining === 0 ? "#94a3b8" : "#0284c7",
+                  color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem",
+                  cursor: chatLoading || !chatInput.trim() || cooldown > 0 || remaining === 0 ? "not-allowed" : "pointer",
+                  display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap"
+                }}
+              >
+                {chatLoading ? <i className="fa-solid fa-spinner fa-spin" /> : cooldown > 0 ? <i className="fa-solid fa-clock" /> : <i className="fa-solid fa-paper-plane" />}
+                {cooldown > 0 ? `${cooldown}초` : "전송"}
+              </button>
+            </div>
           </div>
         </div>
 
