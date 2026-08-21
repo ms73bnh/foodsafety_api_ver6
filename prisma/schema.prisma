@@ -215,18 +215,21 @@ model raw_material_posts {
 
 // 사용자 관리 테이블
 model user {
-  id          Int      @id @default(autoincrement())
-  username    String   @unique // 아이디
-  password    String   // pbkdf2로 해싱된 비밀번호
-  name        String   // 성명
-  companyNm   String   // 회사명
-  deptNm      String   // 부서명
-  positionNm  String   // 직급
-  titleNm     String   // 직책
-  role        String   @default("USER") // ADMIN or USER
-  isApproved  Boolean  @default(false) // 가입 승인 여부
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  username       String   @unique // 아이디
+  password       String   // pbkdf2로 해싱된 비밀번호
+  name           String   // 성명
+  companyNm      String   // 회사명
+  deptNm         String   // 부서명
+  positionNm     String   // 직급
+  titleNm        String   // 직책
+  role           String   @default("USER") // ADMIN or USER or SALES
+  isApproved     Boolean  @default(false) // 가입 승인 여부
+  dailyChatLimit Int      @default(20)    // 일일 AI 질문 한도 (관리자는 무제한, 기본 20회)
+  dailyChatCount Int      @default(0)     // 오늘 질문 사용 횟수
+  lastChatDate   String?                  // 마지막 질문 일자 (YYYY-MM-DD)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 // 작업 이력 로그 테이블

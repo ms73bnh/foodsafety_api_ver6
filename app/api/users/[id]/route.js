@@ -77,6 +77,19 @@ export async function PUT(req, { params }) {
       if (targetUser.titleNm !== titleNm) logDetails.push(`직책 변경: ${targetUser.titleNm} -> ${titleNm}`);
     }
 
+    if (body.dailyChatLimit !== undefined) {
+      const limitVal = parseInt(body.dailyChatLimit, 10);
+      if (!isNaN(limitVal) && limitVal >= 0) {
+        dataToUpdate.dailyChatLimit = limitVal;
+        logDetails.push(`일일 질문 한도 변경: ${targetUser.dailyChatLimit || 20} -> ${limitVal}회`);
+      }
+    }
+
+    if (body.resetDailyChat === true) {
+      dataToUpdate.dailyChatCount = 0;
+      logDetails.push(`오늘 질문 횟수 초기화 (0회로 리셋)`);
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: dataToUpdate

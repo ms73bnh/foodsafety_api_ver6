@@ -1,60 +1,110 @@
 import prisma from '@/lib/prisma';
 import { getEmbedding, cosineSimilarity, getGeminiModel } from '@/lib/gemini';
+import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-// ─── Rate Limit 설정 ──────────────────────────────────────────────
-const USER_DAILY_LIMIT = 20;    // 사용자(IP)별 하루 최대 질문 수
-const GLOBAL_DAILY_LIMIT = 500; // 전체 시스템 하루 최대 질문 수
-
-/** 오늘 날짜 문자열 (KST 기준 YYYY-MM-DD) */
 function todayKST() {
   const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
   return d.toISOString().slice(0, 10);
 }
 
-const dailyCountMap = new Map(); // "YYYY-MM-DD:ip" → count
-const globalCountMap = new Map(); // "YYYY-MM-DD" → count
+// 비로그인 IP용 인메모리 백업 Map
+const ipCountMap = new Map();
 
-function checkRateLimit(ip) {
+/**
+ * 사용자별 Rate Limit 확인 및 처리
+ */
+async function checkAndIncrementUserChatLimit(req) {
+  const currentUser = getCurrentUser(req);
   const today = todayKST();
-  const userKey = `${today}:${ip}`;
-  const globalKey = today;
 
-  const userCount = dailyCountMap.get(userKey) || 0;
-  const globalCount = globalCountMap.get(globalKey) || 0;
-
-  if (globalCount >= GLOBAL_DAILY_LIMIT) {
+  // 1. 관리자(ADMIN)는 무제한!
+  if (currentUser && currentUser.role === 'ADMIN') {
     return {
-      allowed: false,
-      reason: 'global',
-      remaining: 0,
-      message: `오늘의 전체 질문 한도(${GLOBAL_DAILY_LIMIT}회)에 도달했습니다. 내일 다시 이용해 주세요.`,
-    };
-  }
-  if (userCount >= USER_DAILY_LIMIT) {
-    return {
-      allowed: false,
-      reason: 'user',
-      remaining: 0,
-      message: `오늘 사용 가능한 질문 횟수(${USER_DAILY_LIMIT}회)를 모두 사용했습니다. 내일 다시 이용해 주세요.`,
+      allowed: true,
+      isAdmin: true,
+      remaining: 9999,
+      limit: 9999,
+      used: 0,
     };
   }
 
+  // 2. 로그인된 일반 사용자 (DB 기반 관리)
+  if (currentUser && currentUser.id) {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: currentUser.id },
+      select: { id: true, username: true, role: true, dailyChatLimit: true, dailyChatCount: true, lastChatDate: true }
+    });
+
+    if (dbUser) {
+      if (dbUser.role === 'ADMIN') {
+        return { allowed: true, isAdmin: true, remaining: 9999, limit: 9999, used: 0 };
+      }
+
+      // 날짜가 바뀌었으면 카운트 0으로 리셋
+      let currentCount = dbUser.lastChatDate === today ? (dbUser.dailyChatCount || 0) : 0;
+      const limit = dbUser.dailyChatLimit || 20;
+
+      if (currentCount >= limit) {
+        return {
+          allowed: false,
+          isAdmin: false,
+          remaining: 0,
+          limit,
+          used: currentCount,
+          message: `오늘 사용 가능한 질문 횟수(${limit}회)를 모두 사용했습니다. 내일 다시 이용해 주시거나 관리자에게 문의해 주세요.`,
+        };
+      }
+
+      // 카운트 1 증가
+      const nextCount = currentCount + 1;
+      await prisma.user.update({
+        where: { id: dbUser.id },
+        data: {
+          dailyChatCount: nextCount,
+          lastChatDate: today,
+        }
+      });
+
+      return {
+        allowed: true,
+        isAdmin: false,
+        remaining: Math.max(0, limit - nextCount),
+        limit,
+        used: nextCount,
+      };
+    }
+  }
+
+  // 3. 비로그인 사용자 (IP 기준 10회 제한)
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('x-real-ip') ||
+    'unknown';
+  const ipKey = `${today}:${ip}`;
+  const ipCount = ipCountMap.get(ipKey) || 0;
+  const ipLimit = 10;
+
+  if (ipCount >= ipLimit) {
+    return {
+      allowed: false,
+      isAdmin: false,
+      remaining: 0,
+      limit: ipLimit,
+      used: ipCount,
+      message: `비로그인 사용자의 일일 질문 한도(${ipLimit}회)에 도달했습니다. 로그인 후 이용해 주세요.`,
+    };
+  }
+
+  ipCountMap.set(ipKey, ipCount + 1);
   return {
     allowed: true,
-    remaining: USER_DAILY_LIMIT - userCount - 1,
-    userCount: userCount + 1,
-    globalCount: globalCount + 1,
-    userKey,
-    globalKey,
+    isAdmin: false,
+    remaining: Math.max(0, ipLimit - ipCount - 1),
+    limit: ipLimit,
+    used: ipCount + 1,
   };
-}
-
-function incrementCount(check) {
-  if (!check.userKey) return;
-  dailyCountMap.set(check.userKey, check.userCount);
-  globalCountMap.set(check.globalKey, check.globalCount);
 }
 
 export async function POST(req) {
@@ -68,20 +118,15 @@ export async function POST(req) {
       });
     }
 
-    // ── Rate Limit 체크 ──────────────────────────────────────────
-    const ip =
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      req.headers.get('x-real-ip') ||
-      'unknown';
-    const rateCheck = checkRateLimit(ip);
+    // ── 사용자별 Rate Limit 검사 (관리자 무제한) ─────────────────────────
+    const rateCheck = await checkAndIncrementUserChatLimit(req);
 
     if (!rateCheck.allowed) {
       return new Response(
-        JSON.stringify({ error: rateCheck.message, rateLimited: true }),
+        JSON.stringify({ error: rateCheck.message, rateLimited: true, remaining: 0 }),
         { status: 429, headers: { 'Content-Type': 'application/json' } }
       );
     }
-    incrementCount(rateCheck);
 
     const cleanQuestion = question.trim();
 
@@ -93,11 +138,11 @@ export async function POST(req) {
       console.warn('Embedding generation failed, falling back to keyword search:', embErr.message);
     }
 
-    // 2. DB에서 안건 및 회의록 데이터 로드
+    // 2. DB에서 전체 심의 안건 로드 (최신 500개)
     const allAgendas = await prisma.committee_agendas.findMany({
       include: { meeting: true },
       orderBy: { id: 'desc' },
-      take: 200,
+      take: 500,
     });
 
     // 3. 하이브리드 유사도 계산
@@ -119,11 +164,11 @@ export async function POST(req) {
     scored.sort((a, b) => b.score - a.score);
     const topMatches = scored.slice(0, 6);
 
-    // 4. Gemini 프롬프트 구성
+    // 4. 프롬프트 구성
     const contextItems = topMatches.map((m, idx) => {
       return `[참고자료 ${idx + 1}]
 - 회의명: ${m.meeting?.title || '식약처 건강기능식품심의위원회'}
-- 일시: ${m.meeting?.meetingDate || '날짜 미상'}
+- 일시: ${m.meeting?.meetingDate || m.meeting?.postDate || '날짜 미상'}
 - 담당부서: ${m.meeting?.department || '영양기능연구과'}
 - 안건(원료명): ${m.ingredientName} (${m.agendaType || '신규인정'})
 - 심의결과: ${m.result}
@@ -149,12 +194,12 @@ ${cleanQuestion}
 
 위 참고자료를 바탕으로 사용자의 질문에 대해 전문적이고 명확하게 답변해 주세요.`;
 
-    // 5. Gemini 스트리밍 응답
+    // 5. Gemini 스트리밍 생성
     const model = getGeminiModel();
     const resultStream = await model.generateContentStream(prompt);
 
     const encoder = new TextEncoder();
-    const remaining = rateCheck.remaining;
+    const { remaining, isAdmin: isAdminUser } = rateCheck;
 
     const customReadable = new ReadableStream({
       async start(controller) {
@@ -163,12 +208,12 @@ ${cleanQuestion}
           ingredientName: m.ingredientName,
           result: m.result,
           meetingNo: m.meeting?.meetingNo,
-          meetingDate: m.meeting?.meetingDate,
+          meetingDate: m.meeting?.meetingDate || m.meeting?.postDate,
           meetingTitle: m.meeting?.title,
           pdfFileName: m.meeting?.pdfFileName,
           pdfFileUrl: m.meeting?.pdfFileUrl,
         }));
-        controller.enqueue(encoder.encode(`__REF__:${JSON.stringify({ refs: refData, remaining })}\n\n`));
+        controller.enqueue(encoder.encode(`__REF__:${JSON.stringify({ refs: refData, remaining, isAdmin: isAdminUser })}\n\n`));
 
         try {
           for await (const chunk of resultStream.stream) {
@@ -200,27 +245,64 @@ ${cleanQuestion}
   }
 }
 
-// 남은 질문 횟수 조회 (GET)
+// 현재 사용자의 남은 질문 횟수 조회 (GET)
 export async function GET(req) {
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    'unknown';
-  const today = todayKST();
-  const userKey = `${today}:${ip}`;
-  const globalKey = today;
-  const userCount = dailyCountMap.get(userKey) || 0;
-  const globalCount = globalCountMap.get(globalKey) || 0;
+  try {
+    const currentUser = getCurrentUser(req);
+    const today = todayKST();
 
-  return new Response(
-    JSON.stringify({
-      userUsed: userCount,
-      userLimit: USER_DAILY_LIMIT,
-      userRemaining: Math.max(0, USER_DAILY_LIMIT - userCount),
-      globalUsed: globalCount,
-      globalLimit: GLOBAL_DAILY_LIMIT,
-      globalRemaining: Math.max(0, GLOBAL_DAILY_LIMIT - globalCount),
-    }),
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+    if (currentUser && currentUser.role === 'ADMIN') {
+      return new Response(
+        JSON.stringify({
+          isAdmin: true,
+          limit: 9999,
+          used: 0,
+          remaining: 9999,
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (currentUser && currentUser.id) {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: currentUser.id },
+        select: { dailyChatLimit: true, dailyChatCount: true, lastChatDate: true, role: true }
+      });
+      if (dbUser) {
+        const isAdminUser = dbUser.role === 'ADMIN';
+        const limit = isAdminUser ? 9999 : (dbUser.dailyChatLimit || 20);
+        const used = dbUser.lastChatDate === today ? (dbUser.dailyChatCount || 0) : 0;
+        return new Response(
+          JSON.stringify({
+            isAdmin: isAdminUser,
+            limit,
+            used,
+            remaining: isAdminUser ? 9999 : Math.max(0, limit - used),
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 비로그인
+    const ip =
+      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      req.headers.get('x-real-ip') ||
+      'unknown';
+    const ipKey = `${today}:${ip}`;
+    const used = ipCountMap.get(ipKey) || 0;
+    const limit = 10;
+
+    return new Response(
+      JSON.stringify({
+        isAdmin: false,
+        limit,
+        used,
+        remaining: Math.max(0, limit - used),
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+  }
 }

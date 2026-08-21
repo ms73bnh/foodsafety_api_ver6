@@ -937,7 +937,42 @@ function ManagePageInner() {
                      </div>
 
                      {/* 비�?번호 초기삭제?�션 */}
-                     <div style={{ marginBottom: '20px', padding: '14px 16px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                     
+                     {/* ── AI 심의 도우미 질문 한도 설정 ── */}
+                     <div style={{ marginBottom: '16px', padding: '14px 16px', background: '#f0fdfa', borderRadius: '10px', border: '1px solid #99f6e4' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                           <div>
+                              <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, color: '#0f766e' }}>
+                                 <i className="fa-solid fa-robot" style={{ marginRight: '6px' }}></i>AI 심의 도우미 일일 질문 한도
+                              </p>
+                              <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#115e59' }}>
+                                 오늘 사용량: <strong>{editForm.dailyChatCount || 0}회</strong> / {editForm.role === 'ADMIN' ? '무제한(ADMIN)' : `${editForm.dailyChatLimit || 20}회`}
+                              </p>
+                           </div>
+                           <button
+                              type="button"
+                              onClick={() => setEditForm({ ...editForm, resetDailyChat: true, dailyChatCount: 0 })}
+                              style={{ padding: '6px 12px', fontSize: '0.76rem', background: editForm.resetDailyChat ? '#dcfce7' : '#fff', color: editForm.resetDailyChat ? '#15803d' : '#0f766e', border: '1px solid #5eead4', borderRadius: '6px', cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}
+                           >
+                              {editForm.resetDailyChat ? '✓ 오늘 횟수 리셋 예약' : '오늘 횟수 0으로 초기화'}
+                           </button>
+                        </div>
+                        {editForm.role !== 'ADMIN' && (
+                           <div>
+                              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#134e4a', marginBottom: '4px' }}>일일 질문 허용 횟수 (기본 20회)</label>
+                              <input
+                                 type="number"
+                                 min="0"
+                                 max="1000"
+                                 value={editForm.dailyChatLimit ?? 20}
+                                 onChange={e => setEditForm({ ...editForm, dailyChatLimit: e.target.value })}
+                                 style={{ width: '100%', padding: '8px 12px', border: '1px solid #5eead4', borderRadius: '8px', fontSize: '0.88rem', background: '#fff', boxSizing: 'border-box' }}
+                              />
+                           </div>
+                        )}
+                     </div>
+
+<div style={{ marginBottom: '20px', padding: '14px 16px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                            <div>
                               <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-color)' }}>

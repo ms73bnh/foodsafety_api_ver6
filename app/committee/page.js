@@ -9,6 +9,103 @@ const QUICK_QUESTIONS = [
   "최근 '기능성 추가'로 인정받은 개별인정형 원료들은 무엇이 있어?",
 ];
 
+// ── 공통 중앙 페이지네이션 컴포넌트 (1, 2, 3... 번호형) ──
+function CenteredPagination({ current, totalPages, onChange }) {
+  if (totalPages <= 1) return null;
+
+  const maxButtons = 10;
+  const currentBlock = Math.floor((current - 1) / maxButtons);
+  const startPage = currentBlock * maxButtons + 1;
+  const endPage = Math.min(totalPages, startPage + maxButtons - 1);
+
+  const pages = [];
+  for (let i = startPage; i <= endPage; i++) {
+    pages.push(i);
+  }
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, padding: "16px 0 8px", flexWrap: "wrap" }}>
+      {/* 맨 처음 */}
+      <button
+        onClick={() => onChange(1)}
+        disabled={current <= 1}
+        title="첫 페이지"
+        style={{
+          width: 32, height: 32, borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff",
+          cursor: current <= 1 ? "not-allowed" : "pointer", opacity: current <= 1 ? 0.4 : 1,
+          fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center"
+        }}
+      >
+        <i className="fa-solid fa-angles-left" />
+      </button>
+
+      {/* 이전 */}
+      <button
+        onClick={() => onChange(Math.max(1, current - 1))}
+        disabled={current <= 1}
+        title="이전 페이지"
+        style={{
+          width: 32, height: 32, borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff",
+          cursor: current <= 1 ? "not-allowed" : "pointer", opacity: current <= 1 ? 0.4 : 1,
+          fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center"
+        }}
+      >
+        <i className="fa-solid fa-angle-left" />
+      </button>
+
+      {/* 숫자 버튼 그룹 */}
+      {pages.map((p) => {
+        const isActive = p === current;
+        return (
+          <button
+            key={p}
+            onClick={() => onChange(p)}
+            style={{
+              minWidth: 32, height: 32, padding: "0 6px", borderRadius: 8,
+              border: isActive ? "1px solid #0284c7" : "1px solid #e2e8f0",
+              background: isActive ? "linear-gradient(135deg, #0284c7, #0369a1)" : "#fff",
+              color: isActive ? "#fff" : "#334155",
+              cursor: "pointer", fontSize: "0.82rem", fontWeight: isActive ? 800 : 500,
+              boxShadow: isActive ? "0 2px 6px rgba(2,132,199,0.3)" : "none",
+              transition: "all 0.15s"
+            }}
+          >
+            {p}
+          </button>
+        );
+      })}
+
+      {/* 다음 */}
+      <button
+        onClick={() => onChange(Math.min(totalPages, current + 1))}
+        disabled={current >= totalPages}
+        title="다음 페이지"
+        style={{
+          width: 32, height: 32, borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff",
+          cursor: current >= totalPages ? "not-allowed" : "pointer", opacity: current >= totalPages ? 0.4 : 1,
+          fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center"
+        }}
+      >
+        <i className="fa-solid fa-angle-right" />
+      </button>
+
+      {/* 맨 끝 */}
+      <button
+        onClick={() => onChange(totalPages)}
+        disabled={current >= totalPages}
+        title="마지막 페이지"
+        style={{
+          width: 32, height: 32, borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff",
+          cursor: current >= totalPages ? "not-allowed" : "pointer", opacity: current >= totalPages ? 0.4 : 1,
+          fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center"
+        }}
+      >
+        <i className="fa-solid fa-angles-right" />
+      </button>
+    </div>
+  );
+}
+
 export default function CommitteePage() {
   // 상단 탭 상태: 'meetings' (회의 게시물 뷰) | 'agendas' (심의 안건별 뷰)
   const [viewTab, setViewTab] = useState("meetings");
@@ -41,7 +138,7 @@ export default function CommitteePage() {
   // 4. PDF 미리보기 모달 상태
   const [previewPdf, setPreviewPdf] = useState(null); // { id, title, fileName, fileUrl }
 
-  // 5. AI 챗봇 상태
+  // 5. AI 챗봇 상태 & 권한
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState([
     {
@@ -52,9 +149,27 @@ export default function CommitteePage() {
   ]);
   const [chatLoading, setChatLoading] = useState(false);
   const [remaining, setRemaining] = useState(20);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef(null);
   const chatEndRef = useRef(null);
+
+  // 사용자 권한 및 잔여 질문 수 조회
+  useEffect(() => {
+    fetch('/api/committee/chat')
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setIsAdmin(!!data.isAdmin);
+          if (data.isAdmin) {
+            setRemaining(9999);
+          } else if (typeof data.remaining === 'number') {
+            setRemaining(data.remaining);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // ── 데이터 조회 ──────────────────────────────────────────────────────────
   
@@ -156,6 +271,7 @@ export default function CommitteePage() {
 
   // 쿨다운 타이머 (2초)
   const startCooldown = () => {
+    if (isAdmin) return; // 관리자는 쿨다운 없음
     setCooldown(2);
     if (cooldownRef.current) clearInterval(cooldownRef.current);
     cooldownRef.current = setInterval(() => {
@@ -221,7 +337,10 @@ export default function CommitteePage() {
               try {
                 const parsed = JSON.parse(p.substring(8));
                 refs = parsed.refs ?? parsed;
-                if (typeof parsed.remaining === "number") {
+                if (parsed.isAdmin) {
+                  setIsAdmin(true);
+                  setRemaining(9999);
+                } else if (typeof parsed.remaining === "number") {
                   setRemaining(parsed.remaining);
                 }
               } catch (e) {}
@@ -271,7 +390,7 @@ export default function CommitteePage() {
   };
 
   return (
-    <div style={{ maxWidth: 1440, margin: "0 auto", padding: "32px 24px" }}>
+    <div style={{ maxWidth: 1440, margin: "0 auto", padding: "32px 24px 60px" }}>
       {/* ── 헤더 ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 16 }}>
         <div>
@@ -284,7 +403,7 @@ export default function CommitteePage() {
             </h1>
           </div>
           <p style={{ color: "#64748b", fontSize: "0.85rem", margin: 0 }}>
-            식약처 주요위원회 심의 결과(인정 / 보완 / 불인정) 공시 데이터 및 Gemini 3.6 Flash RAG 질의응답 (무료 · 1인 일 20회 한도)
+            식약처 주요위원회 심의 결과(인정 / 보완 / 불인정) 공시 데이터 및 Gemini 3.6 Flash RAG 질의응답 {isAdmin ? "(관리자 무제한 테스트 모드)" : "(일반 1인 1일 20회 무료)"}
           </p>
         </div>
 
@@ -333,7 +452,7 @@ export default function CommitteePage() {
       <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1.35fr", gap: 24, alignItems: "start" }}>
         
         {/* 🤖 1. AI 심의 도우미 Q&A 챗봇 */}
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", height: "820px", overflow: "hidden" }}>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", height: "860px", overflow: "hidden" }}>
           {/* 챗봇 헤더 */}
           <div style={{ padding: "16px 20px", borderBottom: "1px solid #e2e8f0", background: "linear-gradient(135deg, #0f172a, #1e293b)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -344,10 +463,18 @@ export default function CommitteePage() {
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-              <span style={{ fontSize: "0.7rem", color: remaining > 5 ? "#4ade80" : remaining > 0 ? "#fbbf24" : "#f87171", fontWeight: 700 }}>
-                오늘 남은 질문: {remaining}회
-              </span>
-              <span style={{ fontSize: "0.66rem", color: "#94a3b8" }}>일 최대 20회 (무료)</span>
+              {isAdmin ? (
+                <span style={{ fontSize: "0.74rem", color: "#4ade80", fontWeight: 800, background: "rgba(74,222,128,0.15)", padding: "2px 8px", borderRadius: 4 }}>
+                  <i className="fa-solid fa-shield-halved" style={{ marginRight: 4 }} />무제한 (ADMIN)
+                </span>
+              ) : (
+                <>
+                  <span style={{ fontSize: "0.7rem", color: remaining > 5 ? "#4ade80" : remaining > 0 ? "#fbbf24" : "#f87171", fontWeight: 700 }}>
+                    오늘 남은 질문: {remaining}회
+                  </span>
+                  <span style={{ fontSize: "0.66rem", color: "#94a3b8" }}>일 최대 20회 (무료)</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -402,7 +529,7 @@ export default function CommitteePage() {
               <button
                 key={idx}
                 onClick={() => handleSendChat(q)}
-                disabled={chatLoading || cooldown > 0}
+                disabled={chatLoading || (cooldown > 0 && !isAdmin)}
                 style={{
                   padding: "4px 10px", background: "#f0fdfa", color: "#0d9488", border: "1px solid #ccfbf1",
                   borderRadius: 14, fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", flexShrink: 0
@@ -415,7 +542,7 @@ export default function CommitteePage() {
 
           {/* 챗봇 입력창 */}
           <div style={{ padding: "12px 16px", borderTop: "1px solid #e2e8f0", background: "#fff" }}>
-            {(cooldown > 0 || remaining <= 5) && (
+            {!isAdmin && (cooldown > 0 || remaining <= 5) && (
               <div style={{ marginBottom: 6, fontSize: "0.74rem", display: "flex", justifyContent: "space-between" }}>
                 {cooldown > 0 && (
                   <span style={{ color: "#64748b" }}>
@@ -441,29 +568,29 @@ export default function CommitteePage() {
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendChat()}
                 placeholder="심의위원회 회의록 관련 질문을 입력하세요... (예: 피치세라마이드 보완 사유)"
-                disabled={chatLoading || cooldown > 0 || remaining === 0}
-                style={{ flex: 1, padding: "10px 14px", border: "1px solid #cbd5e1", borderRadius: 10, fontSize: "0.84rem", outline: "none", opacity: remaining === 0 ? 0.5 : 1 }}
+                disabled={chatLoading || (!isAdmin && (cooldown > 0 || remaining === 0))}
+                style={{ flex: 1, padding: "10px 14px", border: "1px solid #cbd5e1", borderRadius: 10, fontSize: "0.84rem", outline: "none", opacity: (!isAdmin && remaining === 0) ? 0.5 : 1 }}
               />
               <button
                 onClick={() => handleSendChat()}
-                disabled={chatLoading || !chatInput.trim() || cooldown > 0 || remaining === 0}
+                disabled={chatLoading || !chatInput.trim() || (!isAdmin && (cooldown > 0 || remaining === 0))}
                 style={{
                   padding: "10px 18px",
-                  background: chatLoading || !chatInput.trim() || cooldown > 0 || remaining === 0 ? "#94a3b8" : "#0284c7",
+                  background: chatLoading || !chatInput.trim() || (!isAdmin && (cooldown > 0 || remaining === 0)) ? "#94a3b8" : "#0284c7",
                   color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem",
-                  cursor: chatLoading || !chatInput.trim() || cooldown > 0 || remaining === 0 ? "not-allowed" : "pointer",
+                  cursor: chatLoading || !chatInput.trim() || (!isAdmin && (cooldown > 0 || remaining === 0)) ? "not-allowed" : "pointer",
                   display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap"
                 }}
               >
-                {chatLoading ? <i className="fa-solid fa-spinner fa-spin" /> : cooldown > 0 ? <i className="fa-solid fa-clock" /> : <i className="fa-solid fa-paper-plane" />}
-                {cooldown > 0 ? `${cooldown}초` : "전송"}
+                {chatLoading ? <i className="fa-solid fa-spinner fa-spin" /> : cooldown > 0 && !isAdmin ? <i className="fa-solid fa-clock" /> : <i className="fa-solid fa-paper-plane" />}
+                {cooldown > 0 && !isAdmin ? `${cooldown}초` : "전송"}
               </button>
             </div>
           </div>
         </div>
 
         {/* 📋 2. 우측 탭 전환 영역 (회의 게시물 뷰 vs 안건별 결과 뷰) */}
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", padding: 20, minHeight: "820px", display: "flex", flexDirection: "column" }}>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", padding: "20px 20px 10px", minHeight: "860px", display: "flex", flexDirection: "column" }}>
           
           {/* 상단 탭 헤더 */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #f1f5f9", paddingBottom: 14, marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
@@ -534,7 +661,7 @@ export default function CommitteePage() {
           {/* ═════════ TAB 1: 회의 게시물 뷰 (식약처 공시 형태) ═════════ */}
           {viewTab === "meetings" && (
             <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-              {/* 검색 및 필터 */}
+              {/* 검색 및 부서 필터 */}
               <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                 <div style={{ flex: 1, position: "relative" }}>
                   <i className="fa-solid fa-magnifying-glass" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: "0.8rem" }} />
@@ -559,8 +686,8 @@ export default function CommitteePage() {
                 )}
               </div>
 
-              {/* 게시물 카드 리스트 (식약처 스타일) */}
-              <div style={{ flex: 1, overflowY: "auto", maxHeight: "610px", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4 }}>
+              {/* 게시물 카드 리스트 (텍스트 줄바꿈 완벽 지원 & 카드 높이 유연화) */}
+              <div style={{ flex: 1, overflowY: "auto", maxHeight: "640px", display: "flex", flexDirection: "column", gap: 12, paddingRight: 4 }}>
                 {loading ? (
                   <div style={{ textAlign: "center", padding: 60, color: "#94a3b8" }}>
                     <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: 8 }} /> 회의 목록을 불러오는 중...
@@ -577,33 +704,35 @@ export default function CommitteePage() {
                         key={m.id}
                         style={{
                           border: "1px solid #e2e8f0",
-                          borderRadius: 10,
+                          borderRadius: 12,
                           background: isExpanded ? "#f8fafc" : "#fff",
-                          transition: "all 0.2s",
-                          overflow: "hidden",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+                          transition: "all 0.15s",
                         }}
                       >
-                        {/* 게시물 헤더 영역 */}
-                        <div style={{ padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
-                          {/* 글 번호 (예: 359) */}
+                        {/* 게시물 본문 영역 (높이 자동 확장) */}
+                        <div style={{ padding: "16px 18px", display: "flex", gap: 14, alignItems: "flex-start" }}>
+                          {/* 글 번호 (예: 362) */}
                           <div style={{
-                            minWidth: 42, height: 42, borderRadius: 8, background: "#f1f5f9",
+                            minWidth: 42, minHeight: 42, borderRadius: 8, background: "#f1f5f9",
                             display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: "0.95rem", fontWeight: 800, color: "#475569", flexShrink: 0
+                            fontSize: "0.92rem", fontWeight: 800, color: "#475569", flexShrink: 0, marginTop: 2
                           }}>
                             {m.postNo || m.id}
                           </div>
 
                           {/* 제목 및 메타정보 */}
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {/* 제목 — 폰트 사이즈 조정 및 줄바꿈 완전 지원 */}
+                            <div style={{ marginBottom: 8 }}>
                               <a
                                 href={m.sourceUrl || "#"}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 style={{
-                                  fontSize: "0.9rem", fontWeight: 700, color: "#0f172a",
-                                  textDecoration: "none", lineHeight: 1.4
+                                  fontSize: "0.92rem", fontWeight: 700, color: "#0f172a",
+                                  textDecoration: "none", lineHeight: 1.5,
+                                  wordBreak: "break-word", overflowWrap: "anywhere", display: "block"
                                 }}
                                 onMouseEnter={(e) => e.target.style.color = "#0284c7"}
                                 onMouseLeave={(e) => e.target.style.color = "#0f172a"}
@@ -613,35 +742,35 @@ export default function CommitteePage() {
                             </div>
 
                             {/* 담당부서 | 조회수 | 등록일 */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: "0.75rem", color: "#64748b", flexWrap: "wrap" }}>
-                              <span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: "0.76rem", color: "#64748b", flexWrap: "wrap", marginBottom: 10 }}>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                                 <strong style={{ color: "#475569" }}>담당부서:</strong> {m.department || "식약처"}
                               </span>
                               {m.viewCount != null && (
-                                <span>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                                   <strong style={{ color: "#475569" }}>조회수:</strong> {m.viewCount.toLocaleString()}
                                 </span>
                               )}
-                              <span>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                                 <strong style={{ color: "#475569" }}>등록일:</strong> {m.postDate || m.meetingDate || "-"}
                               </span>
                               {m.agendas && m.agendas.length > 0 && (
-                                <span style={{ background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
+                                <span style={{ background: "#e0f2fe", color: "#0369a1", padding: "1px 8px", borderRadius: 4, fontWeight: 700, fontSize: "0.72rem" }}>
                                   심의안건 {m.agendas.length}건
                                 </span>
                               )}
                             </div>
 
                             {/* 첨부파일 다운로드 & PDF 미리보기 버튼 */}
-                            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                               {/* PDF 미리보기 버튼 */}
                               {m.pdfFileUrl && (
                                 <button
                                   onClick={() => setPreviewPdf({ id: m.id, title: m.title, fileName: m.pdfFileName, fileUrl: m.pdfFileUrl })}
                                   style={{
-                                    display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px",
-                                    background: "#0284c7", color: "#fff", border: "none", borderRadius: 6,
-                                    fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 3px rgba(2,132,199,0.2)"
+                                    display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px",
+                                    background: "linear-gradient(135deg, #0284c7, #0369a1)", color: "#fff", border: "none", borderRadius: 6,
+                                    fontSize: "0.74rem", fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 3px rgba(2,132,199,0.25)"
                                   }}
                                 >
                                   <i className="fa-solid fa-eye" /> PDF 미리보기
@@ -654,7 +783,7 @@ export default function CommitteePage() {
                                   href={`/api/committee/pdf/${m.id}?download=true`}
                                   download
                                   style={{
-                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px",
+                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px",
                                     background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6,
                                     fontSize: "0.72rem", fontWeight: 600, textDecoration: "none"
                                   }}
@@ -670,7 +799,7 @@ export default function CommitteePage() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   style={{
-                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px",
+                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px",
                                     background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6,
                                     fontSize: "0.72rem", fontWeight: 600, textDecoration: "none"
                                   }}
@@ -686,7 +815,7 @@ export default function CommitteePage() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   style={{
-                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px",
+                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px",
                                     background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0", borderRadius: 6,
                                     fontSize: "0.72rem", fontWeight: 600, textDecoration: "none"
                                   }}
@@ -715,7 +844,7 @@ export default function CommitteePage() {
 
                         {/* 아코디언 확장 영역 (해당 회의의 안건 리스트) */}
                         {isExpanded && m.agendas && m.agendas.length > 0 && (
-                          <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: "14px 16px" }}>
+                          <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: "14px 18px" }}>
                             <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#0f172a", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                               <i className="fa-solid fa-list-check" style={{ color: "#0284c7" }} />
                               심의 안건 및 의결 결과:
@@ -727,10 +856,10 @@ export default function CommitteePage() {
                                   style={{
                                     display: "flex", justifyContent: "space-between", alignItems: "center",
                                     background: "#f8fafc", padding: "8px 12px", borderRadius: 6,
-                                    border: "1px solid #f1f5f9", fontSize: "0.78rem"
+                                    border: "1px solid #f1f5f9", fontSize: "0.78rem", gap: 8
                                   }}
                                 >
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                                     <strong style={{ color: "#0f172a" }}>{ag.ingredientName}</strong>
                                     {ag.agendaType && (
                                       <span style={{ background: "#f1f5f9", color: "#475569", padding: "1px 6px", borderRadius: 4, fontSize: "0.68rem" }}>
@@ -739,7 +868,7 @@ export default function CommitteePage() {
                                     )}
                                     <span style={{ color: "#64748b", fontSize: "0.72rem" }}>({ag.rawName})</span>
                                   </div>
-                                  <div>{getResultBadge(ag.result)}</div>
+                                  <div style={{ flexShrink: 0 }}>{getResultBadge(ag.result)}</div>
                                 </div>
                               ))}
                             </div>
@@ -751,14 +880,16 @@ export default function CommitteePage() {
                 )}
               </div>
 
-              {/* 게시물 뷰 페이지네이션 */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
-                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>총 {meetingTotal}건 회의 공시</span>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button onClick={() => fetchMeetings(meetingPage - 1)} disabled={meetingPage <= 1} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: meetingPage <= 1 ? "not-allowed" : "pointer", fontSize: "0.75rem", color: meetingPage <= 1 ? "#cbd5e1" : "#0f172a" }}>이전</button>
-                  <span style={{ padding: "4px 10px", fontSize: "0.75rem", fontWeight: 700, color: "#0284c7" }}>{meetingPage} / {meetingPages}</span>
-                  <button onClick={() => fetchMeetings(meetingPage + 1)} disabled={meetingPage >= meetingPages} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: meetingPage >= meetingPages ? "not-allowed" : "pointer", fontSize: "0.75rem", color: meetingPage >= meetingPages ? "#cbd5e1" : "#0f172a" }}>다음</button>
+              {/* ── 게시물 뷰 중앙 번호형 페이지네이션 ── */}
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #f1f5f9", textAlign: "center" }}>
+                <div style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: 4 }}>
+                  총 <strong>{meetingTotal}</strong>건 회의 공시 (현재 {meetingPage} / {meetingPages} 페이지)
                 </div>
+                <CenteredPagination
+                  current={meetingPage}
+                  totalPages={meetingPages}
+                  onChange={(p) => fetchMeetings(p)}
+                />
               </div>
             </div>
           )}
@@ -778,14 +909,14 @@ export default function CommitteePage() {
               </div>
 
               {/* 안건 목록 테이블 */}
-              <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", flex: 1, maxHeight: "610px", overflowY: "auto" }}>
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", flex: 1, maxHeight: "640px", overflowY: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
                   <thead>
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", position: "sticky", top: 0, zIndex: 5 }}>
                       <th style={{ padding: "10px 12px", textAlign: "left", color: "#64748b", fontWeight: 700, width: "110px" }}>회차/일시</th>
                       <th style={{ padding: "10px 12px", textAlign: "left", color: "#64748b", fontWeight: 700 }}>원료·성분명 / 안건 내용</th>
                       <th style={{ padding: "10px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "70px" }}>결과</th>
-                      <th style={{ padding: "10px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "100px" }}>원문/PDF</th>
+                      <th style={{ padding: "10px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "110px" }}>원문/PDF</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -800,7 +931,7 @@ export default function CommitteePage() {
                           onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
                           <td style={{ padding: "10px 12px", color: "#64748b", fontSize: "0.75rem", whiteSpace: "nowrap" }}>
                             <div style={{ fontWeight: 700, color: "#0f172a" }}>{ag.meeting?.meetingNo || "심의회의"}</div>
-                            <div style={{ color: "#94a3b8", fontSize: "0.7rem" }}>{ag.meeting?.meetingDate || "-"}</div>
+                            <div style={{ color: "#94a3b8", fontSize: "0.7rem" }}>{ag.meeting?.meetingDate || ag.meeting?.postDate || "-"}</div>
                           </td>
                           <td style={{ padding: "10px 12px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
@@ -824,7 +955,7 @@ export default function CommitteePage() {
                                 <button
                                   onClick={() => setPreviewPdf({ id: ag.meeting.id, title: ag.meeting.title, fileName: ag.meeting.pdfFileName, fileUrl: ag.meeting.pdfFileUrl })}
                                   style={{
-                                    padding: "3px 6px", background: "#0284c7", color: "#fff", border: "none",
+                                    padding: "4px 7px", background: "#0284c7", color: "#fff", border: "none",
                                     borderRadius: 4, fontSize: "0.68rem", fontWeight: 700, cursor: "pointer"
                                   }}
                                   title="PDF 미리보기"
@@ -838,7 +969,7 @@ export default function CommitteePage() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   style={{
-                                    padding: "3px 6px", background: "#f1f5f9", color: "#0284c7", border: "1px solid #cbd5e1",
+                                    padding: "4px 7px", background: "#f1f5f9", color: "#0284c7", border: "1px solid #cbd5e1",
                                     borderRadius: 4, fontSize: "0.68rem", fontWeight: 700, textDecoration: "none"
                                   }}
                                   title="식약처 공시 원문"
@@ -855,14 +986,16 @@ export default function CommitteePage() {
                 </table>
               </div>
 
-              {/* 안건 뷰 페이지네이션 */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
-                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>총 {agendaTotal}건 안건</span>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button onClick={() => fetchAgendas(agendaPage - 1)} disabled={agendaPage <= 1} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: agendaPage <= 1 ? "not-allowed" : "pointer", fontSize: "0.75rem", color: agendaPage <= 1 ? "#cbd5e1" : "#0f172a" }}>이전</button>
-                  <span style={{ padding: "4px 10px", fontSize: "0.75rem", fontWeight: 700, color: "#0284c7" }}>{agendaPage} / {agendaPages}</span>
-                  <button onClick={() => fetchAgendas(agendaPage + 1)} disabled={agendaPage >= agendaPages} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: agendaPage >= agendaPages ? "not-allowed" : "pointer", fontSize: "0.75rem", color: agendaPage >= agendaPages ? "#cbd5e1" : "#0f172a" }}>다음</button>
+              {/* ── 안건 뷰 중앙 번호형 페이지네이션 ── */}
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #f1f5f9", textAlign: "center" }}>
+                <div style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: 4 }}>
+                  총 <strong>{agendaTotal}</strong>건 안건 (현재 {agendaPage} / {agendaPages} 페이지)
                 </div>
+                <CenteredPagination
+                  current={agendaPage}
+                  totalPages={agendaPages}
+                  onChange={(p) => fetchAgendas(p)}
+                />
               </div>
             </div>
           )}
