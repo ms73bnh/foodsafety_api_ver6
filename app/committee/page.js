@@ -10,22 +10,38 @@ const QUICK_QUESTIONS = [
 ];
 
 export default function CommitteePage() {
-  // 데이터 및 탭 상태
+  // 상단 탭 상태: 'meetings' (회의 게시물 뷰) | 'agendas' (심의 안건별 뷰)
+  const [viewTab, setViewTab] = useState("meetings");
+
+  // 1. 회의 게시물 데이터 상태
+  const [meetings, setMeetings] = useState([]);
+  const [meetingTotal, setMeetingTotal] = useState(0);
+  const [meetingPage, setMeetingPage] = useState(1);
+  const [meetingPages, setMeetingPages] = useState(1);
+  const [meetingSearch, setMeetingSearch] = useState("");
+  const [meetingDeptFilter, setMeetingDeptFilter] = useState("");
+  const [departments, setDepartments] = useState([]);
+  const [expandedMeetingId, setExpandedMeetingId] = useState(null);
+
+  // 2. 심의 안건 데이터 상태
   const [agendas, setAgendas] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(1);
+  const [agendaTotal, setAgendaTotal] = useState(0);
+  const [agendaPage, setAgendaPage] = useState(1);
+  const [agendaPages, setAgendaPages] = useState(1);
+  const [agendaSearch, setAgendaSearch] = useState("");
+  const [agendaResultFilter, setAgendaResultFilter] = useState("");
   const [stats, setStats] = useState({ total: 0, approved: 0, supplement: 0, rejected: 0, other: 0 });
-  const [meetingsCount, setMeetingsCount] = useState(0);
+
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [resultFilter, setResultFilter] = useState("");
-  
-  // 동기화 상태
+
+  // 3. 동기화 상태
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
 
-  // AI 챗봇 상태
+  // 4. PDF 미리보기 모달 상태
+  const [previewPdf, setPreviewPdf] = useState(null); // { id, title, fileName, fileUrl }
+
+  // 5. AI 챗봇 상태
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState([
     {
@@ -35,53 +51,94 @@ export default function CommitteePage() {
     },
   ]);
   const [chatLoading, setChatLoading] = useState(false);
-  const [remaining, setRemaining] = useState(20); // 오늘 남은 질문 횟수
-  const [cooldown, setCooldown] = useState(0);    // 쿨다운 카운트다운(초)
+  const [remaining, setRemaining] = useState(20);
+  const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // 안건 데이터 조회
+  // ── 데이터 조회 ──────────────────────────────────────────────────────────
+  
+  // 회의 게시물 목록 조회
+  const fetchMeetings = useCallback(async (p = 1) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: p.toString(),
+        limit: "10",
+        search: meetingSearch,
+        department: meetingDeptFilter,
+      });
+      const res = await fetch(`/api/committee/meetings?${params}`);
+      const json = await res.json();
+      if (json.success) {
+        setMeetings(json.data || []);
+        setMeetingTotal(json.total || 0);
+        setMeetingPage(p);
+        setMeetingPages(json.pages || 1);
+        if (json.departments) setDepartments(json.departments);
+      }
+    } catch (e) {
+      console.error('Fetch meetings error:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [meetingSearch, meetingDeptFilter]);
+
+  // 안건별 목록 조회
   const fetchAgendas = useCallback(async (p = 1) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
         page: p.toString(),
         limit: "15",
-        search,
-        result: resultFilter,
+        search: agendaSearch,
+        result: agendaResultFilter,
       });
       const res = await fetch(`/api/committee/agendas?${params}`);
       const json = await res.json();
       if (json.success) {
         setAgendas(json.data || []);
-        setTotal(json.total || 0);
-        setPage(p);
-        setPages(json.pages || 1);
+        setAgendaTotal(json.total || 0);
+        setAgendaPage(p);
+        setAgendaPages(json.pages || 1);
         if (json.stats) setStats(json.stats);
-        if (json.meetingsCount) setMeetingsCount(json.meetingsCount);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Fetch agendas error:', e);
     } finally {
       setLoading(false);
     }
-  }, [search, resultFilter]);
+  }, [agendaSearch, agendaResultFilter]);
 
   useEffect(() => {
-    fetchAgendas(1);
-  }, [fetchAgendas]);
+    if (viewTab === "meetings") {
+      fetchMeetings(1);
+    } else {
+      fetchAgendas(1);
+    }
+  }, [viewTab, fetchMeetings, fetchAgendas]);
 
-  // 동기화 실행
+  // 최초 로드 시 양쪽 통계 로드
+  useEffect(() => {
+    fetchAgendas(1);
+    fetchMeetings(1);
+  }, []);
+
+  // 동기화 실행 (신규 게시물 자동 감지)
   const handleSync = async () => {
-    if (!confirm("식약처 건강기능식품심의위원회 최신 회의록을 수집하고 Gemini 임베딩을 생성하시겠습니까?")) return;
+    if (!confirm("식약처 심의위원회 게시판의 최신 회의록을 확인하고 신규 게시물을 자동 동기화하시겠습니까?")) return;
     setSyncing(true);
     setSyncMsg("");
     try {
-      const res = await fetch("/api/committee/sync", { method: "POST" });
+      const res = await fetch("/api/committee/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pages: 3 })
+      });
       const json = await res.json();
       if (json.success) {
         setSyncMsg(json.message);
-        await fetchAgendas(1);
+        await Promise.all([fetchMeetings(1), fetchAgendas(1)]);
       } else {
         alert(json.error || "동기화 중 오류가 발생했습니다.");
       }
@@ -97,7 +154,7 @@ export default function CommitteePage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 쿨다운 타이머 시작 (2초)
+  // 쿨다운 타이머 (2초)
   const startCooldown = () => {
     setCooldown(2);
     if (cooldownRef.current) clearInterval(cooldownRef.current);
@@ -130,7 +187,6 @@ export default function CommitteePage() {
         body: JSON.stringify({ question: q }),
       });
 
-      // 429 Rate Limit 처리
       if (response.status === 429) {
         const errJson = await response.json();
         setMessages(prev => {
@@ -164,7 +220,6 @@ export default function CommitteePage() {
             if (p.startsWith("__REF__:")) {
               try {
                 const parsed = JSON.parse(p.substring(8));
-                // 새 포맷: { refs, remaining }
                 refs = parsed.refs ?? parsed;
                 if (typeof parsed.remaining === "number") {
                   setRemaining(parsed.remaining);
@@ -189,8 +244,6 @@ export default function CommitteePage() {
           return updated;
         });
       }
-
-      // 전송 성공 후 쿨다운 시작
       startCooldown();
     } catch (err) {
       setMessages(prev => {
@@ -214,12 +267,12 @@ export default function CommitteePage() {
     } else if (res === "불인정") {
       return <span style={{ background: "#fee2e2", color: "#dc2626", padding: "3px 8px", borderRadius: 6, fontSize: "0.72rem", fontWeight: 800 }}>불인정</span>;
     }
-    return <span style={{ background: "#f1f5f9", color: "#64748b", padding: "3px 8px", borderRadius: 6, fontSize: "0.72rem", fontWeight: 800 }}>{res}</span>;
+    return <span style={{ background: "#f1f5f9", color: "#64748b", padding: "3px 8px", borderRadius: 6, fontSize: "0.72rem", fontWeight: 800 }}>{res || "기타"}</span>;
   };
 
   return (
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px" }}>
-      {/* 헤더 */}
+    <div style={{ maxWidth: 1440, margin: "0 auto", padding: "32px 24px" }}>
+      {/* ── 헤더 ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 16 }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -250,15 +303,15 @@ export default function CommitteePage() {
             }}
           >
             <i className={`fa-solid ${syncing ? "fa-spinner fa-spin" : "fa-rotate"}`} />
-            {syncing ? "회의록 수집 & 임베딩 중..." : "최신 회의록 동기화"}
+            {syncing ? "최신 공시 동기화 중..." : "최신 회의록 동기화"}
           </button>
         </div>
       </div>
 
-      {/* KPI 통계 카드 */}
+      {/* ── KPI 통계 카드 ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 24 }}>
         {[
-          { label: "총 수집 회의", value: meetingsCount + "회차", color: "#0284c7", icon: "fa-calendar-check" },
+          { label: "총 수집 회의록", value: meetingTotal + "건", color: "#0284c7", icon: "fa-folder-open" },
           { label: "총 심의 안건", value: stats.total + "건", color: "#475569", icon: "fa-list-check" },
           { label: "인정 (승인)", value: stats.approved + "건", color: "#16a34a", icon: "fa-circle-check" },
           { label: "보완 처분", value: stats.supplement + "건", color: "#d97706", icon: "fa-triangle-exclamation" },
@@ -276,11 +329,11 @@ export default function CommitteePage() {
         ))}
       </div>
 
-      {/* 메인 2단 레이아웃 (좌측: AI 챗봇 / 우측: 회의록 및 안건 브라우저) */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1.3fr", gap: 24, alignItems: "start" }}>
+      {/* ── 메인 2단 레이아웃 (좌측: AI 챗봇 / 우측: 회의 게시물 & 안건 탭) ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1.35fr", gap: 24, alignItems: "start" }}>
         
         {/* 🤖 1. AI 심의 도우미 Q&A 챗봇 */}
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", height: "760px", overflow: "hidden" }}>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", height: "820px", overflow: "hidden" }}>
           {/* 챗봇 헤더 */}
           <div style={{ padding: "16px 20px", borderBottom: "1px solid #e2e8f0", background: "linear-gradient(135deg, #0f172a, #1e293b)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -349,7 +402,7 @@ export default function CommitteePage() {
               <button
                 key={idx}
                 onClick={() => handleSendChat(q)}
-                disabled={chatLoading}
+                disabled={chatLoading || cooldown > 0}
                 style={{
                   padding: "4px 10px", background: "#f0fdfa", color: "#0d9488", border: "1px solid #ccfbf1",
                   borderRadius: 14, fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", flexShrink: 0
@@ -362,7 +415,6 @@ export default function CommitteePage() {
 
           {/* 챗봇 입력창 */}
           <div style={{ padding: "12px 16px", borderTop: "1px solid #e2e8f0", background: "#fff" }}>
-            {/* 남은 횟수 & 쿨다운 안내 */}
             {(cooldown > 0 || remaining <= 5) && (
               <div style={{ marginBottom: 6, fontSize: "0.74rem", display: "flex", justifyContent: "space-between" }}>
                 {cooldown > 0 && (
@@ -410,129 +462,472 @@ export default function CommitteePage() {
           </div>
         </div>
 
-        {/* 📋 2. 회의록 및 안건 브라우저 */}
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", padding: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-            <h2 style={{ fontSize: "1.15rem", fontWeight: 800, color: "#0f172a", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-              <i className="fa-solid fa-list" style={{ color: "#0284c7" }} />
-              심의 안건별 결과 목록
-            </h2>
+        {/* 📋 2. 우측 탭 전환 영역 (회의 게시물 뷰 vs 안건별 결과 뷰) */}
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", padding: 20, minHeight: "820px", display: "flex", flexDirection: "column" }}>
+          
+          {/* 상단 탭 헤더 */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #f1f5f9", paddingBottom: 14, marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => setViewTab("meetings")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "8px 16px",
+                  borderRadius: 10, border: "none", fontSize: "0.88rem", fontWeight: 800, cursor: "pointer",
+                  background: viewTab === "meetings" ? "#0284c7" : "#f1f5f9",
+                  color: viewTab === "meetings" ? "#fff" : "#64748b",
+                  transition: "all 0.2s"
+                }}
+              >
+                <i className="fa-solid fa-newspaper" />
+                회의 게시물 뷰 (공시 목록)
+                <span style={{ fontSize: "0.72rem", background: viewTab === "meetings" ? "rgba(255,255,255,0.25)" : "#e2e8f0", padding: "2px 6px", borderRadius: 10 }}>
+                  {meetingTotal}
+                </span>
+              </button>
 
-            {/* 필터 탭 */}
-            <div style={{ display: "flex", gap: 4, background: "#f1f5f9", padding: 3, borderRadius: 8 }}>
-              {[
-                { label: "전체", val: "" },
-                { label: "인정", val: "인정" },
-                { label: "보완", val: "보완" },
-                { label: "불인정", val: "불인정" },
-              ].map((tab) => (
-                <button
-                  key={tab.label}
-                  onClick={() => setResultFilter(tab.val)}
-                  style={{
-                    padding: "5px 12px",
-                    border: "none",
-                    borderRadius: 6,
-                    fontSize: "0.76rem",
-                    fontWeight: resultFilter === tab.val ? 800 : 500,
-                    background: resultFilter === tab.val ? "#fff" : "transparent",
-                    color: resultFilter === tab.val ? "#0284c7" : "#64748b",
-                    cursor: "pointer",
-                    boxShadow: resultFilter === tab.val ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
+              <button
+                onClick={() => setViewTab("agendas")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "8px 16px",
+                  borderRadius: 10, border: "none", fontSize: "0.88rem", fontWeight: 800, cursor: "pointer",
+                  background: viewTab === "agendas" ? "#0284c7" : "#f1f5f9",
+                  color: viewTab === "agendas" ? "#fff" : "#64748b",
+                  transition: "all 0.2s"
+                }}
+              >
+                <i className="fa-solid fa-list-check" />
+                심의 안건별 결과 뷰
+                <span style={{ fontSize: "0.72rem", background: viewTab === "agendas" ? "rgba(255,255,255,0.25)" : "#e2e8f0", padding: "2px 6px", borderRadius: 10 }}>
+                  {agendaTotal}
+                </span>
+              </button>
             </div>
+
+            {/* 안건 뷰일 때만 결과 필터 노출 */}
+            {viewTab === "agendas" && (
+              <div style={{ display: "flex", gap: 4, background: "#f1f5f9", padding: 3, borderRadius: 8 }}>
+                {[
+                  { label: "전체", val: "" },
+                  { label: "인정", val: "인정" },
+                  { label: "보완", val: "보완" },
+                  { label: "불인정", val: "불인정" },
+                ].map((tab) => (
+                  <button
+                    key={tab.label}
+                    onClick={() => setAgendaResultFilter(tab.val)}
+                    style={{
+                      padding: "4px 10px", border: "none", borderRadius: 6, fontSize: "0.74rem",
+                      fontWeight: agendaResultFilter === tab.val ? 800 : 500,
+                      background: agendaResultFilter === tab.val ? "#fff" : "transparent",
+                      color: agendaResultFilter === tab.val ? "#0284c7" : "#64748b",
+                      cursor: "pointer",
+                      boxShadow: agendaResultFilter === tab.val ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* 검색창 */}
-          <div style={{ marginBottom: 14, position: "relative" }}>
-            <i className="fa-solid fa-magnifying-glass" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: "0.8rem" }} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="원료명(예: 하고초, 피치세라마이드), 회의명 검색..."
-              style={{ width: "100%", padding: "9px 12px 9px 38px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: "0.82rem", outline: "none" }}
-            />
-          </div>
-
-          {/* 안건 목록 테이블 */}
-          <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", maxHeight: "560px", overflowY: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-              <thead>
-                <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", position: "sticky", top: 0, zIndex: 5 }}>
-                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#64748b", fontWeight: 700, width: "110px" }}>회차/일시</th>
-                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#64748b", fontWeight: 700 }}>원료·성분명 / 안건 내용</th>
-                  <th style={{ padding: "10px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "70px" }}>결과</th>
-                  <th style={{ padding: "10px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "80px" }}>원문/PDF</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={4} style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>안건 목록을 불러오는 중...</td></tr>
-                ) : agendas.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>등록된 안건 데이터가 없습니다. 상단의 [최신 회의록 동기화] 버튼을 눌러주세요.</td></tr>
-                ) : (
-                  agendas.map((ag) => (
-                    <tr key={ag.id} style={{ borderBottom: "1px solid #f1f5f9" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
-                      <td style={{ padding: "10px 12px", color: "#64748b", fontSize: "0.75rem", whiteSpace: "nowrap" }}>
-                        <div style={{ fontWeight: 700, color: "#0f172a" }}>{ag.meeting?.meetingNo || "심의회의"}</div>
-                        <div style={{ color: "#94a3b8", fontSize: "0.7rem" }}>{ag.meeting?.meetingDate || "-"}</div>
-                      </td>
-                      <td style={{ padding: "10px 12px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                          <strong style={{ color: "#0f172a", fontSize: "0.85rem" }}>{ag.ingredientName}</strong>
-                          {ag.agendaType && (
-                            <span style={{ background: "#f1f5f9", color: "#475569", padding: "1px 6px", borderRadius: 4, fontSize: "0.68rem", fontWeight: 600 }}>
-                              {ag.agendaType}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: 1.4 }}>
-                          {ag.rawName}
-                        </div>
-                      </td>
-                      <td style={{ padding: "10px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
-                        {getResultBadge(ag.result)}
-                      </td>
-                      <td style={{ padding: "10px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
-                        {ag.meeting?.sourceUrl && (
-                          <a
-                            href={ag.meeting.sourceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              padding: "4px 8px", background: "#f1f5f9", color: "#0284c7", border: "1px solid #cbd5e1",
-                              borderRadius: 6, fontSize: "0.7rem", fontWeight: 700, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4
-                            }}
-                          >
-                            <i className="fa-solid fa-arrow-up-right-from-square" /> 공시
-                          </a>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+          {/* ═════════ TAB 1: 회의 게시물 뷰 (식약처 공시 형태) ═════════ */}
+          {viewTab === "meetings" && (
+            <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+              {/* 검색 및 필터 */}
+              <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                <div style={{ flex: 1, position: "relative" }}>
+                  <i className="fa-solid fa-magnifying-glass" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: "0.8rem" }} />
+                  <input
+                    value={meetingSearch}
+                    onChange={(e) => setMeetingSearch(e.target.value)}
+                    placeholder="회의명, 회차, 안건 원료명 검색..."
+                    style={{ width: "100%", padding: "9px 12px 9px 38px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: "0.82rem", outline: "none" }}
+                  />
+                </div>
+                {departments.length > 0 && (
+                  <select
+                    value={meetingDeptFilter}
+                    onChange={(e) => setMeetingDeptFilter(e.target.value)}
+                    style={{ padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: "0.8rem", color: "#334155", background: "#fff" }}
+                  >
+                    <option value="">모든 부서</option>
+                    {departments.map((d) => (
+                      <option key={d.name} value={d.name}>{d.name} ({d.count})</option>
+                    ))}
+                  </select>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </div>
 
-          {/* 페이지네이션 */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>총 {total}건 안건</span>
-            <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => fetchAgendas(page - 1)} disabled={page <= 1} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: page <= 1 ? "not-allowed" : "pointer", fontSize: "0.75rem", color: page <= 1 ? "#cbd5e1" : "#0f172a" }}>이전</button>
-              <span style={{ padding: "4px 10px", fontSize: "0.75rem", fontWeight: 700, color: "#0284c7" }}>{page} / {pages}</span>
-              <button onClick={() => fetchAgendas(page + 1)} disabled={page >= pages} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: page >= pages ? "not-allowed" : "pointer", fontSize: "0.75rem", color: page >= pages ? "#cbd5e1" : "#0f172a" }}>다음</button>
+              {/* 게시물 카드 리스트 (식약처 스타일) */}
+              <div style={{ flex: 1, overflowY: "auto", maxHeight: "610px", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4 }}>
+                {loading ? (
+                  <div style={{ textAlign: "center", padding: 60, color: "#94a3b8" }}>
+                    <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: 8 }} /> 회의 목록을 불러오는 중...
+                  </div>
+                ) : meetings.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 60, color: "#94a3b8" }}>
+                    검색 결과가 없습니다.
+                  </div>
+                ) : (
+                  meetings.map((m) => {
+                    const isExpanded = expandedMeetingId === m.id;
+                    return (
+                      <div
+                        key={m.id}
+                        style={{
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 10,
+                          background: isExpanded ? "#f8fafc" : "#fff",
+                          transition: "all 0.2s",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {/* 게시물 헤더 영역 */}
+                        <div style={{ padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
+                          {/* 글 번호 (예: 359) */}
+                          <div style={{
+                            minWidth: 42, height: 42, borderRadius: 8, background: "#f1f5f9",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: "0.95rem", fontWeight: 800, color: "#475569", flexShrink: 0
+                          }}>
+                            {m.postNo || m.id}
+                          </div>
+
+                          {/* 제목 및 메타정보 */}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                              <a
+                                href={m.sourceUrl || "#"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: "0.9rem", fontWeight: 700, color: "#0f172a",
+                                  textDecoration: "none", lineHeight: 1.4
+                                }}
+                                onMouseEnter={(e) => e.target.style.color = "#0284c7"}
+                                onMouseLeave={(e) => e.target.style.color = "#0f172a"}
+                              >
+                                {m.title}
+                              </a>
+                            </div>
+
+                            {/* 담당부서 | 조회수 | 등록일 */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: "0.75rem", color: "#64748b", flexWrap: "wrap" }}>
+                              <span>
+                                <strong style={{ color: "#475569" }}>담당부서:</strong> {m.department || "식약처"}
+                              </span>
+                              {m.viewCount != null && (
+                                <span>
+                                  <strong style={{ color: "#475569" }}>조회수:</strong> {m.viewCount.toLocaleString()}
+                                </span>
+                              )}
+                              <span>
+                                <strong style={{ color: "#475569" }}>등록일:</strong> {m.postDate || m.meetingDate || "-"}
+                              </span>
+                              {m.agendas && m.agendas.length > 0 && (
+                                <span style={{ background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
+                                  심의안건 {m.agendas.length}건
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 첨부파일 다운로드 & PDF 미리보기 버튼 */}
+                            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                              {/* PDF 미리보기 버튼 */}
+                              {m.pdfFileUrl && (
+                                <button
+                                  onClick={() => setPreviewPdf({ id: m.id, title: m.title, fileName: m.pdfFileName, fileUrl: m.pdfFileUrl })}
+                                  style={{
+                                    display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px",
+                                    background: "#0284c7", color: "#fff", border: "none", borderRadius: 6,
+                                    fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 3px rgba(2,132,199,0.2)"
+                                  }}
+                                >
+                                  <i className="fa-solid fa-eye" /> PDF 미리보기
+                                </button>
+                              )}
+
+                              {/* PDF 다운로드 버튼 */}
+                              {m.pdfFileUrl && (
+                                <a
+                                  href={`/api/committee/pdf/${m.id}?download=true`}
+                                  download
+                                  style={{
+                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px",
+                                    background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6,
+                                    fontSize: "0.72rem", fontWeight: 600, textDecoration: "none"
+                                  }}
+                                >
+                                  <i className="fa-solid fa-file-pdf" /> PDF 다운
+                                </a>
+                              )}
+
+                              {/* HWP 다운로드 버튼 */}
+                              {m.hwpFileUrl && (
+                                <a
+                                  href={m.hwpFileUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px",
+                                    background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6,
+                                    fontSize: "0.72rem", fontWeight: 600, textDecoration: "none"
+                                  }}
+                                >
+                                  <i className="fa-solid fa-file-lines" /> HWP 다운
+                                </a>
+                              )}
+
+                              {/* 식약처 원문 링크 */}
+                              {m.sourceUrl && (
+                                <a
+                                  href={m.sourceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px",
+                                    background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0", borderRadius: 6,
+                                    fontSize: "0.72rem", fontWeight: 600, textDecoration: "none"
+                                  }}
+                                >
+                                  <i className="fa-solid fa-arrow-up-right-from-square" /> 식약처 공시
+                                </a>
+                              )}
+
+                              {/* 안건 아코디언 토글 버튼 */}
+                              {m.agendas && m.agendas.length > 0 && (
+                                <button
+                                  onClick={() => setExpandedMeetingId(isExpanded ? null : m.id)}
+                                  style={{
+                                    marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4,
+                                    padding: "4px 10px", background: isExpanded ? "#e2e8f0" : "#f1f5f9",
+                                    color: "#334155", border: "none", borderRadius: 6, fontSize: "0.72rem",
+                                    fontWeight: 700, cursor: "pointer"
+                                  }}
+                                >
+                                  {isExpanded ? "안건 접기 ▲" : `안건 ${m.agendas.length}개 보기 ▼`}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 아코디언 확장 영역 (해당 회의의 안건 리스트) */}
+                        {isExpanded && m.agendas && m.agendas.length > 0 && (
+                          <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: "14px 16px" }}>
+                            <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#0f172a", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                              <i className="fa-solid fa-list-check" style={{ color: "#0284c7" }} />
+                              심의 안건 및 의결 결과:
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              {m.agendas.map((ag) => (
+                                <div
+                                  key={ag.id}
+                                  style={{
+                                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                                    background: "#f8fafc", padding: "8px 12px", borderRadius: 6,
+                                    border: "1px solid #f1f5f9", fontSize: "0.78rem"
+                                  }}
+                                >
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <strong style={{ color: "#0f172a" }}>{ag.ingredientName}</strong>
+                                    {ag.agendaType && (
+                                      <span style={{ background: "#f1f5f9", color: "#475569", padding: "1px 6px", borderRadius: 4, fontSize: "0.68rem" }}>
+                                        {ag.agendaType}
+                                      </span>
+                                    )}
+                                    <span style={{ color: "#64748b", fontSize: "0.72rem" }}>({ag.rawName})</span>
+                                  </div>
+                                  <div>{getResultBadge(ag.result)}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* 게시물 뷰 페이지네이션 */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
+                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>총 {meetingTotal}건 회의 공시</span>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button onClick={() => fetchMeetings(meetingPage - 1)} disabled={meetingPage <= 1} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: meetingPage <= 1 ? "not-allowed" : "pointer", fontSize: "0.75rem", color: meetingPage <= 1 ? "#cbd5e1" : "#0f172a" }}>이전</button>
+                  <span style={{ padding: "4px 10px", fontSize: "0.75rem", fontWeight: 700, color: "#0284c7" }}>{meetingPage} / {meetingPages}</span>
+                  <button onClick={() => fetchMeetings(meetingPage + 1)} disabled={meetingPage >= meetingPages} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: meetingPage >= meetingPages ? "not-allowed" : "pointer", fontSize: "0.75rem", color: meetingPage >= meetingPages ? "#cbd5e1" : "#0f172a" }}>다음</button>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* ═════════ TAB 2: 심의 안건별 결과 뷰 (테이블 형태) ═════════ */}
+          {viewTab === "agendas" && (
+            <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+              {/* 검색창 */}
+              <div style={{ marginBottom: 14, position: "relative" }}>
+                <i className="fa-solid fa-magnifying-glass" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: "0.8rem" }} />
+                <input
+                  value={agendaSearch}
+                  onChange={(e) => setAgendaSearch(e.target.value)}
+                  placeholder="원료명(예: 하고초, 피치세라마이드), 회의명 검색..."
+                  style={{ width: "100%", padding: "9px 12px 9px 38px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: "0.82rem", outline: "none" }}
+                />
+              </div>
+
+              {/* 안건 목록 테이블 */}
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", flex: 1, maxHeight: "610px", overflowY: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", position: "sticky", top: 0, zIndex: 5 }}>
+                      <th style={{ padding: "10px 12px", textAlign: "left", color: "#64748b", fontWeight: 700, width: "110px" }}>회차/일시</th>
+                      <th style={{ padding: "10px 12px", textAlign: "left", color: "#64748b", fontWeight: 700 }}>원료·성분명 / 안건 내용</th>
+                      <th style={{ padding: "10px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "70px" }}>결과</th>
+                      <th style={{ padding: "10px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "100px" }}>원문/PDF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr><td colSpan={4} style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>안건 목록을 불러오는 중...</td></tr>
+                    ) : agendas.length === 0 ? (
+                      <tr><td colSpan={4} style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>등록된 안건 데이터가 없습니다.</td></tr>
+                    ) : (
+                      agendas.map((ag) => (
+                        <tr key={ag.id} style={{ borderBottom: "1px solid #f1f5f9" }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+                          <td style={{ padding: "10px 12px", color: "#64748b", fontSize: "0.75rem", whiteSpace: "nowrap" }}>
+                            <div style={{ fontWeight: 700, color: "#0f172a" }}>{ag.meeting?.meetingNo || "심의회의"}</div>
+                            <div style={{ color: "#94a3b8", fontSize: "0.7rem" }}>{ag.meeting?.meetingDate || "-"}</div>
+                          </td>
+                          <td style={{ padding: "10px 12px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                              <strong style={{ color: "#0f172a", fontSize: "0.85rem" }}>{ag.ingredientName}</strong>
+                              {ag.agendaType && (
+                                <span style={{ background: "#f1f5f9", color: "#475569", padding: "1px 6px", borderRadius: 4, fontSize: "0.68rem", fontWeight: 600 }}>
+                                  {ag.agendaType}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: 1.4 }}>
+                              {ag.rawName}
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
+                            {getResultBadge(ag.result)}
+                          </td>
+                          <td style={{ padding: "10px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
+                            <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                              {ag.meeting?.pdfFileUrl && (
+                                <button
+                                  onClick={() => setPreviewPdf({ id: ag.meeting.id, title: ag.meeting.title, fileName: ag.meeting.pdfFileName, fileUrl: ag.meeting.pdfFileUrl })}
+                                  style={{
+                                    padding: "3px 6px", background: "#0284c7", color: "#fff", border: "none",
+                                    borderRadius: 4, fontSize: "0.68rem", fontWeight: 700, cursor: "pointer"
+                                  }}
+                                  title="PDF 미리보기"
+                                >
+                                  <i className="fa-solid fa-eye" />
+                                </button>
+                              )}
+                              {ag.meeting?.sourceUrl && (
+                                <a
+                                  href={ag.meeting.sourceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    padding: "3px 6px", background: "#f1f5f9", color: "#0284c7", border: "1px solid #cbd5e1",
+                                    borderRadius: 4, fontSize: "0.68rem", fontWeight: 700, textDecoration: "none"
+                                  }}
+                                  title="식약처 공시 원문"
+                                >
+                                  공시
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 안건 뷰 페이지네이션 */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
+                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>총 {agendaTotal}건 안건</span>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button onClick={() => fetchAgendas(agendaPage - 1)} disabled={agendaPage <= 1} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: agendaPage <= 1 ? "not-allowed" : "pointer", fontSize: "0.75rem", color: agendaPage <= 1 ? "#cbd5e1" : "#0f172a" }}>이전</button>
+                  <span style={{ padding: "4px 10px", fontSize: "0.75rem", fontWeight: 700, color: "#0284c7" }}>{agendaPage} / {agendaPages}</span>
+                  <button onClick={() => fetchAgendas(agendaPage + 1)} disabled={agendaPage >= agendaPages} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: agendaPage >= agendaPages ? "not-allowed" : "pointer", fontSize: "0.75rem", color: agendaPage >= agendaPages ? "#cbd5e1" : "#0f172a" }}>다음</button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
 
       </div>
+
+      {/* ── 👁️ PDF 미리보기 iframe 팝업 모달 ── */}
+      {previewPdf && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: 14, width: "100%", maxWidth: "1100px", height: "90vh",
+            display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 40px rgba(0,0,0,0.3)"
+          }}>
+            {/* 모달 헤더 */}
+            <div style={{
+              padding: "14px 20px", background: "#0f172a", color: "#fff",
+              display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, overflow: "hidden" }}>
+                <i className="fa-solid fa-file-pdf" style={{ color: "#ef4444", fontSize: "1.2rem" }} />
+                <div style={{ fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {previewPdf.title}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                <a
+                  href={`/api/committee/pdf/${previewPdf.id}?download=true`}
+                  download
+                  style={{
+                    padding: "6px 12px", background: "#0284c7", color: "#fff", borderRadius: 6,
+                    fontSize: "0.76rem", fontWeight: 700, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6
+                  }}
+                >
+                  <i className="fa-solid fa-download" /> 다운로드
+                </a>
+                <button
+                  onClick={() => setPreviewPdf(null)}
+                  style={{
+                    background: "none", border: "none", color: "#94a3b8", fontSize: "1.2rem",
+                    cursor: "pointer", padding: "4px 8px"
+                  }}
+                >
+                  <i className="fa-solid fa-xmark" />
+                </button>
+              </div>
+            </div>
+
+            {/* 모달 iframe 뷰어 */}
+            <div style={{ flex: 1, background: "#334155", position: "relative" }}>
+              <iframe
+                src={`/api/committee/pdf/${previewPdf.id}`}
+                style={{ width: "100%", height: "100%", border: "none" }}
+                title={previewPdf.title}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

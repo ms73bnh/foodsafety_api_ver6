@@ -312,15 +312,20 @@ model general_declarations {
 model committee_meetings {
   id           Int                 @id @default(autoincrement())
   seq          String              @unique // 식약처 게시글 고유번호 seq (예: 33423)
+  postNo       String?             // 게시판 번호 (예: 359, 358)
   title        String              // 회의 제목 (예: 제202차 건강기능식품심의위원회 회의 결과)
   meetingNo    String?             // 회차 (예: 제202차)
   meetingDate  String?             // 일시 (예: 2026.4.30.(목))
   department   String?             // 담당부서 (예: 영양기능연구과)
+  viewCount    Int?                // 조회수 (예: 2121)
+  postDate     String?             // 등록일 (예: 2026-07-07)
   attendees    String?             // 참석자 정보 (예: 재적위원 28명 중 15명 참석)
   rawContent   String?             // 본문 원문 텍스트
   sourceUrl    String?             // 식약처 원본 링크
   pdfFileName  String?             // 첨부 PDF 파일명
   pdfFileUrl   String?             // 첨부 PDF 다운로드 링크
+  hwpFileName  String?             // 첨부 HWP/HWPX 파일명
+  hwpFileUrl   String?             // 첨부 HWP/HWPX 다운로드 링크
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
