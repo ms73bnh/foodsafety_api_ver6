@@ -196,7 +196,7 @@ ${cleanQuestion}
 
     // 5. Gemini 스트리밍 생성 (모델 자동 폴백 지원)
     let resultStream = null;
-    const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro'];
+    const candidateModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-pro', 'gemini-3.6-flash'];
     let lastGenError = null;
 
     for (const mName of candidateModels) {

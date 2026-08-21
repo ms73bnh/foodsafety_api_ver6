@@ -157,7 +157,7 @@ export async function POST(req) {
   try {
     const body = await req.json().catch(() => ({}));
     // 기본적으로 최신 3개 페이지를 조회하여 신규 게시물만 자동 증분 동기화
-    const pages = Math.min(parseInt(body.pages || '3'), 36);
+    const pages = Math.min(parseInt(body.pages || '3'), 50);
 
     const BASE_URL = 'https://www.mfds.go.kr';
     const headers = {

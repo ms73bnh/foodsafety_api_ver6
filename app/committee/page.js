@@ -851,7 +851,7 @@ export default function CommitteePage() {
               {/* ── 구분 첫행 헤더 바 (정렬 토글 버튼 포함) ── */}
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "54px 1fr 120px 105px 80px 110px",
+                gridTemplateColumns: "60px 1fr 110px 110px 85px 100px",
                 background: "#f8fafc",
                 border: "1px solid #e2e8f0",
                 borderRadius: "8px 8px 0 0",
@@ -861,38 +861,49 @@ export default function CommitteePage() {
                 color: "#475569",
                 alignItems: "center",
                 gap: 8,
-                marginBottom: 6
+                marginBottom: 6,
+                whiteSpace: "nowrap"
               }}>
                 <div
                   onClick={() => handleMeetingSort("postNo")}
-                  style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3, userSelect: "none" }}
+                  style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3, userSelect: "none", whiteSpace: "nowrap" }}
                   title="글번호 정렬"
                 >
-                  번호 {meetingSortBy === "postNo" ? (meetingSortOrder === "desc" ? "▼" : "▲") : "↕"}
+                  <span>번호</span>
+                  <span style={{ color: "#0284c7", fontSize: "0.72rem" }}>
+                    {meetingSortBy === "postNo" ? (meetingSortOrder === "desc" ? "▼" : "▲") : "↕"}
+                  </span>
                 </div>
                 <div
                   onClick={() => handleMeetingSort("title")}
-                  style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3, userSelect: "none" }}
+                  style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3, userSelect: "none", whiteSpace: "nowrap" }}
                   title="제목 정렬"
                 >
-                  회의 제목 및 심의 안건 {meetingSortBy === "title" ? (meetingSortOrder === "desc" ? "▼" : "▲") : ""}
+                  <span>회의 제목 및 심의 안건</span>
+                  {meetingSortBy === "title" && <span style={{ color: "#0284c7", fontSize: "0.72rem" }}>{meetingSortOrder === "desc" ? "▼" : "▲"}</span>}
                 </div>
-                <div style={{ textAlign: "center" }}>담당부서</div>
+                <div style={{ textAlign: "center", whiteSpace: "nowrap" }}>담당부서</div>
                 <div
                   onClick={() => handleMeetingSort("date")}
-                  style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, userSelect: "none" }}
+                  style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, userSelect: "none", whiteSpace: "nowrap" }}
                   title="등록일자 정렬"
                 >
-                  등록일 {meetingSortBy === "date" ? (meetingSortOrder === "desc" ? "▼" : "▲") : "↕"}
+                  <span>등록일</span>
+                  <span style={{ color: "#0284c7", fontSize: "0.72rem" }}>
+                    {meetingSortBy === "date" ? (meetingSortOrder === "desc" ? "▼" : "▲") : "↕"}
+                  </span>
                 </div>
                 <div
                   onClick={() => handleMeetingSort("views")}
-                  style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, userSelect: "none" }}
+                  style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, userSelect: "none", whiteSpace: "nowrap" }}
                   title="조회수 정렬"
                 >
-                  조회수 {meetingSortBy === "views" ? (meetingSortOrder === "desc" ? "▼" : "▲") : "↕"}
+                  <span>조회수</span>
+                  <span style={{ color: "#0284c7", fontSize: "0.72rem" }}>
+                    {meetingSortBy === "views" ? (meetingSortOrder === "desc" ? "▼" : "▲") : "↕"}
+                  </span>
                 </div>
-                <div style={{ textAlign: "center" }}>원문/파일</div>
+                <div style={{ textAlign: "center", whiteSpace: "nowrap" }}>원문/파일</div>
               </div>
 
               {/* 게시물 카드 리스트 (초기 최신순 정렬) */}
@@ -1126,15 +1137,15 @@ export default function CommitteePage() {
                       <th
                         onClick={() => handleAgendaSort("date")}
                         style={{
-                          padding: "11px 12px", textAlign: "left", color: "#0f172a", fontWeight: 800, width: "135px",
-                          cursor: "pointer", userSelect: "none", background: "#f1f5f9"
+                          padding: "11px 12px", textAlign: "left", color: "#0f172a", fontWeight: 800, width: "140px",
+                          cursor: "pointer", userSelect: "none", background: "#f1f5f9", whiteSpace: "nowrap"
                         }}
                         title="클릭하여 최신순/과거순 정렬 변경"
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
                           <span>회차/일시</span>
-                          <span style={{ color: "#0284c7", fontSize: "0.75rem" }}>
-                            {agendaSortBy === "date" ? (agendaSortOrder === "desc" ? "▼ (최신순)" : "▲ (과거순)") : "↕"}
+                          <span style={{ color: "#0284c7", fontSize: "0.72rem" }}>
+                            {agendaSortBy === "date" ? (agendaSortOrder === "desc" ? "▼ 최신순" : "▲ 과거순") : "↕"}
                           </span>
                         </div>
                       </th>
@@ -1142,28 +1153,28 @@ export default function CommitteePage() {
                       {/* 원료 성분명 헤더 */}
                       <th
                         onClick={() => handleAgendaSort("ingredient")}
-                        style={{ padding: "11px 12px", textAlign: "left", color: "#475569", fontWeight: 700, cursor: "pointer", userSelect: "none" }}
+                        style={{ padding: "11px 12px", textAlign: "left", color: "#475569", fontWeight: 700, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
                         title="원료명 정렬"
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
                           <span>원료·성분명 / 안건 내용</span>
-                          {agendaSortBy === "ingredient" && <span style={{ color: "#0284c7" }}>{agendaSortOrder === "desc" ? "▼" : "▲"}</span>}
+                          {agendaSortBy === "ingredient" && <span style={{ color: "#0284c7", fontSize: "0.72rem" }}>{agendaSortOrder === "desc" ? "▼" : "▲"}</span>}
                         </div>
                       </th>
 
                       {/* 결과 헤더 */}
                       <th
                         onClick={() => handleAgendaSort("result")}
-                        style={{ padding: "11px 10px", textAlign: "center", color: "#475569", fontWeight: 700, width: "80px", cursor: "pointer", userSelect: "none" }}
+                        style={{ padding: "11px 10px", textAlign: "center", color: "#475569", fontWeight: 700, width: "80px", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
                         title="결과 정렬"
                       >
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, whiteSpace: "nowrap" }}>
                           <span>결과</span>
-                          {agendaSortBy === "result" && <span style={{ color: "#0284c7" }}>{agendaSortOrder === "desc" ? "▼" : "▲"}</span>}
+                          {agendaSortBy === "result" && <span style={{ color: "#0284c7", fontSize: "0.72rem" }}>{agendaSortOrder === "desc" ? "▼" : "▲"}</span>}
                         </div>
                       </th>
 
-                      <th style={{ padding: "11px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "110px" }}>원문/PDF</th>
+                      <th style={{ padding: "11px 10px", textAlign: "center", color: "#64748b", fontWeight: 700, width: "110px", whiteSpace: "nowrap" }}>원문/PDF</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1335,10 +1346,10 @@ export default function CommitteePage() {
                   <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #cbd5e1", position: "sticky", top: 0, zIndex: 10 }}>
                     <th
                       onClick={() => handleAgendaSort("date")}
-                      style={{ padding: "12px 16px", textAlign: "left", color: "#0f172a", fontWeight: 800, width: "160px", cursor: "pointer", userSelect: "none" }}
+                      style={{ padding: "12px 16px", textAlign: "left", color: "#0f172a", fontWeight: 800, width: "160px", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
                       title="회차/일시 정렬"
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                         <span>회차 / 개최일시</span>
                         <span style={{ color: "#0284c7", fontSize: "0.78rem" }}>
                           {agendaSortBy === "date" ? (agendaSortOrder === "desc" ? "▼ 최신순" : "▲ 과거순") : "↕"}
@@ -1347,25 +1358,25 @@ export default function CommitteePage() {
                     </th>
                     <th
                       onClick={() => handleAgendaSort("ingredient")}
-                      style={{ padding: "12px 16px", textAlign: "left", color: "#0f172a", fontWeight: 800, cursor: "pointer", userSelect: "none" }}
+                      style={{ padding: "12px 16px", textAlign: "left", color: "#0f172a", fontWeight: 800, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
                       title="원료명 정렬"
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                         <span>원료·성분명 및 안건 상세</span>
                         {agendaSortBy === "ingredient" && <span style={{ color: "#0284c7" }}>{agendaSortOrder === "desc" ? "▼" : "▲"}</span>}
                       </div>
                     </th>
                     <th
                       onClick={() => handleAgendaSort("result")}
-                      style={{ padding: "12px 16px", textAlign: "center", color: "#0f172a", fontWeight: 800, width: "100px", cursor: "pointer", userSelect: "none" }}
+                      style={{ padding: "12px 16px", textAlign: "center", color: "#0f172a", fontWeight: 800, width: "100px", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
                       title="결과 정렬"
                     >
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, whiteSpace: "nowrap" }}>
                         <span>의결 결과</span>
                         {agendaSortBy === "result" && <span style={{ color: "#0284c7" }}>{agendaSortOrder === "desc" ? "▼" : "▲"}</span>}
                       </div>
                     </th>
-                    <th style={{ padding: "12px 16px", textAlign: "center", color: "#475569", fontWeight: 800, width: "140px" }}>
+                    <th style={{ padding: "12px 16px", textAlign: "center", color: "#475569", fontWeight: 800, width: "140px", whiteSpace: "nowrap" }}>
                       원문 공시 / PDF
                     </th>
                   </tr>
