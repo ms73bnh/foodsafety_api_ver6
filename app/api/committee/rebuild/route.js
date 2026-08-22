@@ -154,10 +154,11 @@ export async function POST(req) {
     const mode = body.mode || 'missing'; // 'missing': 빠진 것만, 'all': 전체
 
     // 처리 대상 조회
+    // pdfFileUrl='NONE'은 "확인 완료, PDF 없음" 마커 → 재처리 제외
     const where = mode === 'missing'
-      ? { OR: [{ rawContent: null }, { contentEmbedding: null }, { pdfFileUrl: null }] }
+      ? { OR: [{ rawContent: null }, { contentEmbedding: null }, { AND: [{ pdfFileUrl: null }] }] }
       : mode === 'pdf'
-      ? { pdfFileUrl: null }  // PDF URL만 없는 것
+      ? { pdfFileUrl: null }  // PDF URL만 없는 것 (NONE 제외됨)
       : {};
 
     const meetings = await prisma.committee_meetings.findMany({
@@ -203,6 +204,7 @@ export async function POST(req) {
       }
 
       // 1-1. pdfFileUrl이 DB에 없으면 상세페이지 HTML에서 재탐색
+      // 'NONE'은 "확인 완료, PDF 없음" 마커 - 재시도 안 함
       let pdfFileUrl = meeting.pdfFileUrl;
       if (!pdfFileUrl && detailHtml) {
         const { url, name } = extractAttachmentUrl(detailHtml, 'pdf', meeting.sourceUrl || '');
@@ -210,6 +212,10 @@ export async function POST(req) {
           pdfFileUrl = url;
           updateData.pdfFileUrl = url;
           if (name) updateData.pdfFileName = name;
+        } else {
+          // 페이지를 정상적으로 가져왔지만 PDF 링크가 없음 → 마커 저장
+          updateData.pdfFileUrl = 'NONE';
+          pdfFileUrl = 'NONE';
         }
       }
 
@@ -217,12 +223,15 @@ export async function POST(req) {
       let pdfText = meeting.pdfContent;
       let pdfError = null;
       if (!pdfText) {
-        if (pdfFileUrl) {
+        if (pdfFileUrl && pdfFileUrl !== 'NONE') {
           const { text, error } = await extractPdfText(pdfFileUrl);
           if (text) { pdfText = text; updateData.pdfContent = text; }
-          else pdfError = error;
+          else {
+            pdfError = error;
+            // 다운로드 실패 (세션 필요 등) - URL은 유지하되 에러 기록
+          }
         } else {
-          pdfError = '첨부 PDF 없음';
+          pdfError = pdfFileUrl === 'NONE' ? 'PDF 없음(확인완료)' : '첨부 PDF 없음';
         }
       }
 
