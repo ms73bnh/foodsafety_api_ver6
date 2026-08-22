@@ -348,7 +348,10 @@ export default function CommitteePage() {
         return;
       }
 
-      if (!response.ok) throw new Error("서버 응답 오류");
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || `서버 오류 (${response.status})`);
+      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
