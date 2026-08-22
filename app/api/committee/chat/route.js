@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { getEmbedding, cosineSimilarity, getGeminiModel } from '@/lib/gemini';
+import { getEmbedding, cosineSimilarity, streamGeminiResponse } from '@/lib/gemini';
 import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -194,25 +194,8 @@ ${cleanQuestion}
 
 위 참고자료를 바탕으로 사용자의 질문에 대해 전문적이고 명확하게 답변해 주세요.`;
 
-    // 5. Gemini 스트리밍 생성 (모델 자동 폴백 지원)
-    let resultStream = null;
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-preview-04-17', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
-    let lastGenError = null;
-
-    for (const mName of candidateModels) {
-      try {
-        const model = getGeminiModel(mName);
-        resultStream = await model.generateContentStream(prompt);
-        if (resultStream) break;
-      } catch (err) {
-        lastGenError = err;
-        console.warn(`Model ${mName} generation failed, trying next fallback:`, err.message);
-      }
-    }
-
-    if (!resultStream) {
-      throw new Error(`AI 답변 생성 실패: ${lastGenError?.message || '사용 가능한 Gemini 모델을 찾을 수 없습니다.'}`);
-    }
+    // 5. Gemini 스트리밍 생성
+    const resultStream = await streamGeminiResponse(prompt);
 
     const encoder = new TextEncoder();
     const { remaining, isAdmin: isAdminUser } = rateCheck;
@@ -232,8 +215,8 @@ ${cleanQuestion}
         controller.enqueue(encoder.encode(`__REF__:${JSON.stringify({ refs: refData, remaining, isAdmin: isAdminUser })}\n\n`));
 
         try {
-          for await (const chunk of resultStream.stream) {
-            const chunkText = chunk.text();
+          for await (const chunk of resultStream) {
+            const chunkText = chunk.text;
             if (chunkText) controller.enqueue(encoder.encode(chunkText));
           }
         } catch (streamErr) {
