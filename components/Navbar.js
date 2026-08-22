@@ -16,6 +16,7 @@ export default function Navbar() {
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState({ text: '', error: false });
+  const [menuConfig, setMenuConfig] = useState(null); // null = 아직 로딩 안됨
   const drawerRef = useRef(null);
 
   useEffect(() => {
@@ -42,8 +43,28 @@ export default function Navbar() {
         setLoading(false);
       }
     };
+    const fetchMenuConfig = async () => {
+      try {
+        const res = await fetch('/api/menu-visibility');
+        const data = await res.json();
+        setMenuConfig(data.config || []);
+      } catch (e) {
+        setMenuConfig(null);
+      }
+    };
     fetchMe();
+    fetchMenuConfig();
   }, [pathname, router]);
+
+  // 메뉴 항목이 현재 사용자에게 표시되어야 하는지 확인
+  const isMenuVisible = (key) => {
+    if (!menuConfig) return true; // 로딩 전엔 기본 표시
+    const item = menuConfig.find(m => m.key === key);
+    if (!item) return true; // 설정 없으면 기본 표시
+    if (!item.enabled) return false;
+    const role = user?.role || 'GUEST';
+    return item.visibleTo.includes(role);
+  };
 
   // 드로어 외부 클릭 시 닫기
   useEffect(() => {
@@ -158,64 +179,94 @@ export default function Navbar() {
           </Link>
 
           <div style={{ display: 'flex', gap: '6px', margin: '0 20px', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Link href="/" className={`navbar-item ${pathname === '/' ? 'active' : ''}`}><i className="fa-solid fa-chart-line" style={{ marginRight: '6px' }}></i>대시보드</Link>
-            <div className="navbar-dropdown-container">
-              <span className={`navbar-item dropdown-trigger ${pathname === '/search' || pathname === '/general-search' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
-                <i className="fa-solid fa-magnifying-glass" style={{ marginRight: '6px' }}></i>데이터 검색<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
-              </span>
-              <div className="navbar-dropdown-menu">
-                <Link href="/search" className="dropdown-link">
-                  <i className="fa-solid fa-capsules" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>건강기능식품 검색
-                </Link>
-                {isSalesOrAboveUser && (
-                  <Link href="/general-search" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
-                    <i className="fa-solid fa-bowl-food" style={{ marginRight: '6px', color: '#6366f1' }}></i>일반식품 검색
-                  </Link>
-                )}
+            {isMenuVisible('dashboard') && (
+              <Link href="/" className={`navbar-item ${pathname === '/' ? 'active' : ''}`}><i className="fa-solid fa-chart-line" style={{ marginRight: '6px' }}></i>대시보드</Link>
+            )}
+            {(isMenuVisible('search') || isMenuVisible('general-search')) && (
+              <div className="navbar-dropdown-container">
+                <span className={`navbar-item dropdown-trigger ${pathname === '/search' || pathname === '/general-search' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+                  <i className="fa-solid fa-magnifying-glass" style={{ marginRight: '6px' }}></i>데이터 검색<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
+                </span>
+                <div className="navbar-dropdown-menu">
+                  {isMenuVisible('search') && (
+                    <Link href="/search" className="dropdown-link">
+                      <i className="fa-solid fa-capsules" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>건강기능식품 검색
+                    </Link>
+                  )}
+                  {isMenuVisible('general-search') && (
+                    <Link href="/general-search" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
+                      <i className="fa-solid fa-bowl-food" style={{ marginRight: '6px', color: '#6366f1' }}></i>일반식품 검색
+                    </Link>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="navbar-dropdown-container">
-              <span className={`navbar-item dropdown-trigger ${pathname.startsWith('/companies') ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
-                <i className="fa-solid fa-building" style={{ marginRight: '6px' }}></i>업체별 정보<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
-              </span>
-              <div className="navbar-dropdown-menu">
-                <Link href="/companies" className="dropdown-link">
-                  <i className="fa-solid fa-building" style={{ marginRight: '6px', color: '#0284c7' }}></i>업체별 현황
-                </Link>
-                <Link href="/companies/compare" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
-                  <i className="fa-solid fa-code-compare" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>업체 상호 비교
-                </Link>
+            )}
+            {(isMenuVisible('companies') || isMenuVisible('companies-compare')) && (
+              <div className="navbar-dropdown-container">
+                <span className={`navbar-item dropdown-trigger ${pathname.startsWith('/companies') ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+                  <i className="fa-solid fa-building" style={{ marginRight: '6px' }}></i>업체별 정보<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
+                </span>
+                <div className="navbar-dropdown-menu">
+                  {isMenuVisible('companies') && (
+                    <Link href="/companies" className="dropdown-link">
+                      <i className="fa-solid fa-building" style={{ marginRight: '6px', color: '#0284c7' }}></i>업체별 현황
+                    </Link>
+                  )}
+                  {isMenuVisible('companies-compare') && (
+                    <Link href="/companies/compare" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
+                      <i className="fa-solid fa-code-compare" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>업체 상호 비교
+                    </Link>
+                  )}
+                </div>
               </div>
-            </div>
-            <Link href="/production" className={`navbar-item ${pathname.startsWith('/production') ? 'active' : ''}`} style={{ color: '#0d9488' }}><i className="fa-solid fa-boxes-stacked" style={{ marginRight: '6px' }}></i>생산 실적 분석</Link>
-            <Link href="/analytics" className={`navbar-item ${pathname === '/analytics' ? 'active' : ''}`} style={{ color: '#0284c7', fontWeight: 700 }}><i className="fa-solid fa-chart-pie" style={{ marginRight: '6px' }}></i>통합 분석 레포트</Link>
-            <div className="navbar-dropdown-container">
-              <span className={`navbar-item dropdown-trigger ${pathname === '/categories' || pathname === '/ingredients' || pathname === '/guidelines' || pathname === '/raw-materials' || pathname === '/committee' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
-                <i className="fa-solid fa-flask" style={{ marginRight: '6px' }}></i>개별인정형<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
-              </span>
-              <div className="navbar-dropdown-menu">
-                <Link href="/categories" className="dropdown-link">
-                  <i className="fa-solid fa-tags" style={{ marginRight: '6px', color: '#7c3aed' }}></i>기능성 카테고리
-                </Link>
-                <Link href="/ingredients" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
-                  <i className="fa-solid fa-flask" style={{ marginRight: '6px', color: '#0d9488' }}></i>개별인정원료
-                </Link>
-                <Link href="/guidelines" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
-                  <i className="fa-solid fa-book-bookmark" style={{ marginRight: '6px', color: '#0284c7' }}></i>기능성 평가 가이드라인
-                </Link>
-                <Link href="/raw-materials" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
-                  <i className="fa-solid fa-flask-vial" style={{ marginRight: '6px', color: '#059669' }}></i>원료별 정보 공시
-                </Link>
-                <Link href="/committee" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9', background: '#f0fdfa' }}>
-                  <i className="fa-solid fa-robot" style={{ marginRight: '6px', color: '#0284c7' }}></i>심의위원회 회의록 (AI Q&A)
-                </Link>
+            )}
+            {isMenuVisible('production') && (
+              <Link href="/production" className={`navbar-item ${pathname.startsWith('/production') ? 'active' : ''}`} style={{ color: '#0d9488' }}><i className="fa-solid fa-boxes-stacked" style={{ marginRight: '6px' }}></i>생산 실적 분석</Link>
+            )}
+            {isMenuVisible('analytics') && (
+              <Link href="/analytics" className={`navbar-item ${pathname === '/analytics' ? 'active' : ''}`} style={{ color: '#0284c7', fontWeight: 700 }}><i className="fa-solid fa-chart-pie" style={{ marginRight: '6px' }}></i>통합 분석 레포트</Link>
+            )}
+            {(isMenuVisible('categories') || isMenuVisible('ingredients') || isMenuVisible('guidelines') || isMenuVisible('raw-materials') || isMenuVisible('committee')) && (
+              <div className="navbar-dropdown-container">
+                <span className={`navbar-item dropdown-trigger ${pathname === '/categories' || pathname === '/ingredients' || pathname === '/guidelines' || pathname === '/raw-materials' || pathname === '/committee' ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+                  <i className="fa-solid fa-flask" style={{ marginRight: '6px' }}></i>개별인정형<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
+                </span>
+                <div className="navbar-dropdown-menu">
+                  {isMenuVisible('categories') && (
+                    <Link href="/categories" className="dropdown-link">
+                      <i className="fa-solid fa-tags" style={{ marginRight: '6px', color: '#7c3aed' }}></i>기능성 카테고리
+                    </Link>
+                  )}
+                  {isMenuVisible('ingredients') && (
+                    <Link href="/ingredients" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
+                      <i className="fa-solid fa-flask" style={{ marginRight: '6px', color: '#0d9488' }}></i>개별인정원료
+                    </Link>
+                  )}
+                  {isMenuVisible('guidelines') && (
+                    <Link href="/guidelines" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
+                      <i className="fa-solid fa-book-bookmark" style={{ marginRight: '6px', color: '#0284c7' }}></i>기능성 평가 가이드라인
+                    </Link>
+                  )}
+                  {isMenuVisible('raw-materials') && (
+                    <Link href="/raw-materials" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9' }}>
+                      <i className="fa-solid fa-flask-vial" style={{ marginRight: '6px', color: '#059669' }}></i>원료별 정보 공시
+                    </Link>
+                  )}
+                  {isMenuVisible('committee') && (
+                    <Link href="/committee" className="dropdown-link" style={{ borderTop: '1px solid #f1f5f9', background: '#f0fdfa' }}>
+                      <i className="fa-solid fa-robot" style={{ marginRight: '6px', color: '#0284c7' }}></i>심의위원회 회의록 (AI Q&A)
+                    </Link>
+                  )}
+                </div>
               </div>
-            </div>
-            <Link href="/qna" className={`navbar-item ${pathname === '/qna' ? 'active' : ''}`}>
-              <i className="fa-solid fa-comments" style={{ marginRight: '6px', color: '#0284c7' }}></i>Q&A
-            </Link>
+            )}
+            {isMenuVisible('qna') && (
+              <Link href="/qna" className={`navbar-item ${pathname === '/qna' ? 'active' : ''}`}>
+                <i className="fa-solid fa-comments" style={{ marginRight: '6px', color: '#0284c7' }}></i>Q&A
+              </Link>
+            )}
             {isAdminUser && (
-              <Link href="/manage" className={`navbar-item ${pathname === '/manage' ? 'active' : ''}`} style={{ fontWeight: 'bold', background: 'rgba(2, 132, 199, 0.06)' }}>
+              <Link href="/manage" className={`navbar-item ${pathname.startsWith('/manage') ? 'active' : ''}`} style={{ fontWeight: 'bold', background: 'rgba(2, 132, 199, 0.06)' }}>
                 <i className="fa-solid fa-database" style={{ marginRight: '6px' }}></i>시스템 관리
               </Link>
             )}

@@ -130,107 +130,140 @@ export async function POST(req) {
     }
 
     const cleanQuestion = question.trim();
+    const lowerQ = cleanQuestion.toLowerCase();
 
-    // 0. 관리자가 설정한 커스텀 시스템 프롬프트 로드
+    // 0. 커스텀 시스템 프롬프트 로드 (관리자 설정 or 기본값)
     let systemInstruction;
     try {
       const settingRow = await prisma.system_settings.findUnique({ where: { key: 'committee_system_prompt' } });
       systemInstruction = settingRow?.value || null;
-    } catch (e) {
-      systemInstruction = null;
-    }
+    } catch (e) { systemInstruction = null; }
+
     if (!systemInstruction) {
-      systemInstruction = `당신은 대한민국 식품의약품안전처(식약처) 건강기능식품심의위원회 전문 분석 AI 도우미입니다.
-제공된 [공식 심의위원회 회의록 참고자료]를 기반으로 사용자의 질문에 대해 명확하고 신뢰성 높게 한국어로 답변하세요.
+      systemInstruction = `당신은 식약처 건강기능식품심의위원회 전문 AI 도우미입니다.
+아래 [참고자료]를 바탕으로 질문에 간결하고 정확하게 한국어로 답변하세요.
 
-답변 가이드라인:
-1. 심의 결과(인정 / 보완 / 불인정 등)를 명확히 구분하여 답변하세요.
-2. 회차(예: 제202차), 일시, 원료명, 신청 구분(신규 인정, 기능성 추가 등) 정보를 포함하여 답변의 신뢰성을 높이세요.
-3. 근거 자료에 없는 내용을 임의로 지어내지 말고, 회의록에 기록된 사실을 바탕으로 정중하고 명료하게 설명하세요.
-4. 가독성을 위해 마크다운(글머리 기호, 굵은 글씨, 표 등)을 적극 활용하세요.`;
+규칙:
+- 참고자료에 있는 내용만 답변하고, 없으면 "해당 정보가 데이터에 없습니다"라고 명확히 말하세요.
+- 답변은 핵심만 요약해서 500자 이내로 작성하세요.
+- 마크다운(굵게, 목록)을 활용해 가독성을 높이세요.
+- 원료명·회차·일시·심의결과를 포함해 신뢰성을 높이세요.`;
     }
 
-    // 1. 사용자 질문을 임베딩 벡터로 변환
-    let queryVector = [];
-    try {
-      queryVector = await getEmbedding(cleanQuestion);
-    } catch (embErr) {
-      console.warn('Embedding generation failed, falling back to keyword search:', embErr.message);
-    }
+    // 1. 질문 의도 분류
+    const isRecentQuery = /최근|최신|마지막|새로운|방금|요즘|가장 최근|최근에|최신|최근 등록|최근 게시/.test(lowerQ);
+    const isMemberQuery = /위원|명단|위원장|참석|구성원|멤버|기|임기/.test(lowerQ);
+    const isAgendaQuery = /심의|인정|불인정|보완|원료|성분|결과|안건/.test(lowerQ);
 
-    // 2. DB에서 전체 심의 안건 로드 (최신 500개) + 회의 본문 키워드 검색
-    const [allAgendas, meetingsByKeyword] = await Promise.all([
-      prisma.committee_agendas.findMany({
-        include: { meeting: true },
-        orderBy: { id: 'desc' },
-        take: 500,
-      }),
-      // 회의 rawContent에서 키워드 검색 (위원명단, 참석자 등 본문 정보 커버)
-      (async () => {
-        const keywords = cleanQuestion.split(/[\s,]+/).filter(k => k.length >= 2);
-        if (!keywords.length) return [];
-        try {
-          return await prisma.committee_meetings.findMany({
-            where: {
-              OR: keywords.map(k => ({
-                rawContent: { contains: k }
-              }))
-            },
-            orderBy: { id: 'desc' },
-            take: 5,
-            select: { id: true, title: true, meetingNo: true, meetingDate: true, postDate: true, department: true, rawContent: true }
-          });
-        } catch (e) { return []; }
-      })()
-    ]);
-
-    // 3. 하이브리드 유사도 계산
-    const scored = allAgendas.map(item => {
-      let score = 0;
-      if (queryVector.length > 0 && item.embedding) {
-        try {
-          const vec = JSON.parse(item.embedding);
-          score = cosineSimilarity(queryVector, vec);
-        } catch (e) {}
-      }
-      const lowerQ = cleanQuestion.toLowerCase();
-      if (lowerQ.includes(item.ingredientName.toLowerCase())) score += 0.4;
-      if (item.result && lowerQ.includes(item.result)) score += 0.15;
-      if (item.meeting?.meetingNo && lowerQ.includes(item.meeting.meetingNo)) score += 0.3;
-      return { ...item, score };
+    // 2. 항상 포함: 최신 회의 5건 목록 (어떤 질문이든 기본 컨텍스트)
+    const latestMeetings = await prisma.committee_meetings.findMany({
+      orderBy: { id: 'desc' },
+      take: 5,
+      include: { agendas: { select: { ingredientName: true, result: true }, take: 10 } },
     });
 
-    scored.sort((a, b) => b.score - a.score);
-    const topMatches = scored.slice(0, 5);
+    // 2-1. 회의 레벨 임베딩 검색 (contentEmbedding 있는 경우)
+    let meetingEmbedContext = '';
+    try {
+      let qVec = [];
+      try { qVec = await getEmbedding(cleanQuestion); } catch (e) {}
+      if (qVec.length > 0) {
+        const meetingsWithEmbed = await prisma.committee_meetings.findMany({
+          where: { NOT: { contentEmbedding: null } },
+          orderBy: { id: 'desc' },
+          take: 100,
+          select: {
+            id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
+            rawContent: true, pdfContent: true, contentEmbedding: true,
+            agendas: { select: { ingredientName: true, result: true }, take: 5 },
+          },
+        });
+        const scoredMeetings = meetingsWithEmbed.map(m => {
+          let score = 0;
+          try { score = cosineSimilarity(qVec, JSON.parse(m.contentEmbedding)); } catch (e) {}
+          if (m.meetingNo && lowerQ.includes(m.meetingNo)) score += 0.4;
+          if (m.title && lowerQ.includes(m.title.substring(0, 6))) score += 0.2;
+          return { ...m, score };
+        }).filter(m => m.score > 0.1).sort((a, b) => b.score - a.score).slice(0, 3);
 
-    // 4. 프롬프트 구성 (안건 참고자료 + 회의 본문 참고자료)
-    const agendaContext = topMatches.map((m, idx) => `[안건자료 ${idx + 1}]
-- 회의명: ${m.meeting?.title || '식약처 건강기능식품심의위원회'}
-- 일시: ${m.meeting?.meetingDate || m.meeting?.postDate || '날짜 미상'}
-- 안건(원료명): ${m.ingredientName} (${m.agendaType || '신규인정'})
-- 심의결과: ${m.result}
-- 안건원문: ${m.rawName}`).join('\n\n');
+        meetingEmbedContext = scoredMeetings.map((m, i) =>
+          `[회의자료 ${i + 1}] ${m.title} (${m.meetingNo || ''} ${m.meetingDate || m.postDate || ''})\n` +
+          (m.agendas.length ? `안건: ${m.agendas.map(a => `${a.ingredientName}(${a.result})`).join(', ')}\n` : '') +
+          (m.rawContent ? `본문: ${m.rawContent.substring(0, 800)}` : '') +
+          (m.pdfContent ? `\nPDF: ${m.pdfContent.substring(0, 400)}` : '')
+        ).join('\n\n');
+      }
+    } catch (e) { /* 회의 임베딩 검색 실패 시 무시 */ }
 
-    const meetingContext = meetingsByKeyword.map((m, idx) => {
-      const snippet = (m.rawContent || '').substring(0, 800);
-      return `[회의본문자료 ${idx + 1}]
-- 회의명: ${m.title}
-- 회차: ${m.meetingNo || '-'} / 일시: ${m.meetingDate || m.postDate || '-'}
-- 본문 발췌:\n${snippet}`;
-    }).join('\n\n');
+    const latestMeetingsContext = latestMeetings.map((m, i) =>
+      `[최신회의 ${i + 1}] ${m.title} | ${m.meetingDate || m.postDate || '-'} | 등록일: ${m.postDate || '-'}` +
+      (m.agendas.length ? `\n  안건: ${m.agendas.map(a => `${a.ingredientName}(${a.result})`).join(', ')}` : '')
+    ).join('\n');
 
-    const contextItems = [agendaContext, meetingContext].filter(Boolean).join('\n\n---\n\n');
+    // 3. 본문 키워드 검색 (위원명단·참석자 등 rawContent 필요 시)
+    let rawContentContext = '';
+    if (isMemberQuery || isRecentQuery) {
+      const keywords = cleanQuestion.split(/[\s,]+/).filter(k => k.length >= 2);
+      const found = await prisma.committee_meetings.findMany({
+        where: keywords.length ? { OR: keywords.map(k => ({ rawContent: { contains: k } })) } : {},
+        orderBy: { id: 'desc' },
+        take: 3,
+        select: { title: true, meetingNo: true, meetingDate: true, postDate: true, rawContent: true },
+      }).catch(() => []);
 
+      rawContentContext = found.map((m, i) =>
+        `[본문자료 ${i + 1}] ${m.title} (${m.meetingNo || ''} ${m.meetingDate || m.postDate || ''})\n${(m.rawContent || '').substring(0, 600)}`
+      ).join('\n\n');
+    }
+
+    // 4. 안건 임베딩 검색 (원료명·심의결과 질문 시)
+    let agendaContext = '';
+    let topMatches = [];
+    if (isAgendaQuery || (!isMemberQuery && !isRecentQuery)) {
+      let queryVector = [];
+      try { queryVector = await getEmbedding(cleanQuestion); } catch (e) {}
+
+      const allAgendas = await prisma.committee_agendas.findMany({
+        include: { meeting: true },
+        orderBy: { id: 'desc' },
+        take: 300,
+      });
+
+      const scored = allAgendas.map(item => {
+        let score = 0;
+        if (queryVector.length > 0 && item.embedding) {
+          try { score = cosineSimilarity(queryVector, JSON.parse(item.embedding)); } catch (e) {}
+        }
+        if (lowerQ.includes(item.ingredientName.toLowerCase())) score += 0.5;
+        if (item.result && lowerQ.includes(item.result)) score += 0.15;
+        if (item.meeting?.meetingNo && lowerQ.includes(item.meeting.meetingNo)) score += 0.3;
+        return { ...item, score };
+      }).filter(i => i.score > 0.05);
+
+      scored.sort((a, b) => b.score - a.score);
+      topMatches = scored.slice(0, 5);
+
+      agendaContext = topMatches.map((m, idx) =>
+        `[안건 ${idx + 1}] ${m.meeting?.meetingNo || ''} ${m.meeting?.meetingDate || ''}\n원료: ${m.ingredientName} (${m.agendaType || '신규인정'}) → **${m.result}**\n원문: ${m.rawName}`
+      ).join('\n\n');
+    }
+
+    // 5. 컨텍스트 조합
+    const contextParts = [
+      `[최신 회의 목록]\n${latestMeetingsContext}`,
+      rawContentContext ? `[관련 회의 본문]\n${rawContentContext}` : '',
+      meetingEmbedContext ? `[회의록 유사도 검색결과]\n${meetingEmbedContext}` : '',
+      agendaContext ? `[심의 안건 검색결과]\n${agendaContext}` : '',
+    ].filter(Boolean).join('\n\n---\n\n');
 
     const prompt = `${systemInstruction}
 
-[공식 심의위원회 회의록 참고자료]:
-${contextItems || '관련 회의록 자료가 충분하지 않습니다.'}
+[참고자료]:
+${contextParts}
 
-[사용자 질문]:
-${cleanQuestion}
+[질문]: ${cleanQuestion}
 
-위 참고자료를 바탕으로 사용자의 질문에 대해 전문적이고 명확하게 답변해 주세요.`;
+위 참고자료 기반으로 핵심만 요약해서 답변하세요.`;
 
     // 5. Gemini 스트리밍 생성
     const resultStream = await streamGeminiResponse(prompt);

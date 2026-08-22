@@ -323,14 +323,16 @@ model committee_meetings {
   viewCount    Int?                // 조회수 (예: 2121)
   postDate     String?             // 등록일 (예: 2026-07-07)
   attendees    String?             // 참석자 정보 (예: 재적위원 28명 중 15명 참석)
-  rawContent   String?             // 본문 원문 텍스트
-  sourceUrl    String?             // 식약처 원본 링크
-  pdfFileName  String?             // 첨부 PDF 파일명
-  pdfFileUrl   String?             // 첨부 PDF 다운로드 링크
-  hwpFileName  String?             // 첨부 HWP/HWPX 파일명
-  hwpFileUrl   String?             // 첨부 HWP/HWPX 다운로드 링크
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  rawContent       String?             // 본문 원문 텍스트
+  pdfContent       String?  @db.Text   // PDF에서 추출한 텍스트
+  contentEmbedding String?             // 회의 전체 내용 임베딩 벡터 (JSON)
+  sourceUrl        String?             // 식약처 원본 링크
+  pdfFileName      String?             // 첨부 PDF 파일명
+  pdfFileUrl       String?             // 첨부 PDF 다운로드 링크
+  hwpFileName      String?             // 첨부 HWP/HWPX 파일명
+  hwpFileUrl       String?             // 첨부 HWP/HWPX 다운로드 링크
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
 
   agendas      committee_agendas[]
 }
