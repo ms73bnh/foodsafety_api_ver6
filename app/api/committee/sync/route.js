@@ -5,6 +5,36 @@ import { getEmbedding } from '@/lib/gemini';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+const BASE_URL_SYNC = 'https://www.mfds.go.kr';
+
+// 식약처 첨부파일 링크 추출 (down.do / FileDown.do / javascript:fn_egov_downFile 패턴)
+function findFileLink(src, extPat, baseUrl) {
+  let m;
+  const downRe = /<a\s+[^>]*href=["']([^"']*down\.do\?[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  while ((m = downRe.exec(src)) !== null) {
+    const text = m[2].replace(/<[^>]+>/g, '').trim();
+    if (extPat.test(text)) {
+      const raw = m[1];
+      const url = raw.startsWith('http') ? raw : raw.startsWith('./') ? `${baseUrl}${raw.slice(2)}` : `${BASE_URL_SYNC}${raw.startsWith('/') ? '' : '/'}${raw}`;
+      return { url, name: text };
+    }
+  }
+  const fdRe = /<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  while ((m = fdRe.exec(src)) !== null) {
+    const text = m[2].replace(/<[^>]+>/g, '').trim();
+    if (extPat.test(text) || extPat.test(m[1])) {
+      const url = m[1].startsWith('http') ? m[1] : `${BASE_URL_SYNC}${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
+      return { url, name: text };
+    }
+  }
+  const jsRe = /<a\s+[^>]*href=["']javascript:fn_(?:egov_downFile|fileDown|atchFileDown)\(['"]([^'"]+)['"]\s*,\s*['"](\d+)['"]\)[^>]*>([\s\S]*?)<\/a>/gi;
+  while ((m = jsRe.exec(src)) !== null) {
+    const text = m[3].replace(/<[^>]+>/g, '').trim();
+    if (extPat.test(text)) return { url: `${BASE_URL_SYNC}/cmm/fms/FileDown.do?atchFileId=${m[1]}&fileSn=${m[2]}`, name: text };
+  }
+  return { url: null, name: null };
+}
+
 function cleanText(text = '') {
   return text
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -129,32 +159,12 @@ export async function fetchArticlesFromPage(pageNum, headers, BASE_URL) {
     let pdfFileName = null, pdfFileUrl = null;
     let hwpFileName = null, hwpFileUrl = null;
 
-    // 식약처 eGovFrame 첨부파일 추출 (목록 블록 내)
-    // 패턴1: 직접 URL
-    let pdfMatch = block.match(/<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?\.pdf[\s\S]*?)<\/a>/i);
-    if (pdfMatch) {
-      pdfFileUrl = pdfMatch[1].startsWith('http') ? pdfMatch[1] : `${BASE_URL}${pdfMatch[1].startsWith('/') ? '' : '/'}${pdfMatch[1]}`;
-      pdfFileName = pdfMatch[2].replace(/<[^>]+>/g, '').trim();
-    } else {
-      // 패턴2: javascript:fn_egov_downFile
-      const jsM = block.match(/href=["']javascript:fn_(?:egov_downFile|fileDown|atchFileDown)\(['"]([^'"]+)['"]\s*,\s*['"](\d+)['"]\)[^>]*>([\s\S]*?\.pdf[\s\S]*?)<\/a>/i);
-      if (jsM) {
-        pdfFileUrl = `${BASE_URL}/cmm/fms/FileDown.do?atchFileId=${jsM[1]}&fileSn=${jsM[2]}`;
-        pdfFileName = jsM[3].replace(/<[^>]+>/g, '').trim();
-      }
-    }
+    const listPageBase = `${BASE_URL_SYNC}/brd/m_532/`;
+    const pdfResult = findFileLink(block, /\.pdf/i, listPageBase);
+    if (pdfResult.url) { pdfFileUrl = pdfResult.url; pdfFileName = pdfResult.name; }
 
-    let hwpMatch = block.match(/<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?\.(?:hwp|hwpx)[\s\S]*?)<\/a>/i);
-    if (hwpMatch) {
-      hwpFileUrl = hwpMatch[1].startsWith('http') ? hwpMatch[1] : `${BASE_URL}${hwpMatch[1].startsWith('/') ? '' : '/'}${hwpMatch[1]}`;
-      hwpFileName = hwpMatch[2].replace(/<[^>]+>/g, '').trim();
-    } else {
-      const jsM = block.match(/href=["']javascript:fn_(?:egov_downFile|fileDown|atchFileDown)\(['"]([^'"]+)['"]\s*,\s*['"](\d+)['"]\)[^>]*>([\s\S]*?\.(?:hwp|hwpx)[\s\S]*?)<\/a>/i);
-      if (jsM) {
-        hwpFileUrl = `${BASE_URL}/cmm/fms/FileDown.do?atchFileId=${jsM[1]}&fileSn=${jsM[2]}`;
-        hwpFileName = jsM[3].replace(/<[^>]+>/g, '').trim();
-      }
-    }
+    const hwpResult = findFileLink(block, /\.(?:hwp|hwpx)/i, listPageBase);
+    if (hwpResult.url) { hwpFileUrl = hwpResult.url; hwpFileName = hwpResult.name; }
 
     articles.push({
       seq,
@@ -234,31 +244,14 @@ export async function POST(req) {
           let pdfFileName = art.pdfFileName, pdfFileUrl = art.pdfFileUrl;
           let hwpFileName = art.hwpFileName, hwpFileUrl = art.hwpFileUrl;
 
+          const detailBase = art.href.substring(0, art.href.lastIndexOf('/') + 1);
           if (!pdfFileUrl) {
-            const mPdf = detailHtml.match(/<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?\.pdf[\s\S]*?)<\/a>/i);
-            if (mPdf) {
-              pdfFileUrl = mPdf[1].startsWith('http') ? mPdf[1] : `${BASE_URL}${mPdf[1].startsWith('/') ? '' : '/'}${mPdf[1]}`;
-              pdfFileName = mPdf[2].replace(/<[^>]+>/g, '').trim();
-            } else {
-              const jsM = detailHtml.match(/href=["']javascript:fn_(?:egov_downFile|fileDown|atchFileDown)\(['"]([^'"]+)['"]\s*,\s*['"](\d+)['"]\)[^>]*>([\s\S]*?\.pdf[\s\S]*?)<\/a>/i);
-              if (jsM) {
-                pdfFileUrl = `${BASE_URL}/cmm/fms/FileDown.do?atchFileId=${jsM[1]}&fileSn=${jsM[2]}`;
-                pdfFileName = jsM[3].replace(/<[^>]+>/g, '').trim();
-              }
-            }
+            const r = findFileLink(detailHtml, /\.pdf/i, detailBase);
+            if (r.url) { pdfFileUrl = r.url; pdfFileName = r.name; }
           }
           if (!hwpFileUrl) {
-            const mHwp = detailHtml.match(/<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?\.(?:hwp|hwpx)[\s\S]*?)<\/a>/i);
-            if (mHwp) {
-              hwpFileUrl = mHwp[1].startsWith('http') ? mHwp[1] : `${BASE_URL}${mHwp[1].startsWith('/') ? '' : '/'}${mHwp[1]}`;
-              hwpFileName = mHwp[2].replace(/<[^>]+>/g, '').trim();
-            } else {
-              const jsM = detailHtml.match(/href=["']javascript:fn_(?:egov_downFile|fileDown|atchFileDown)\(['"]([^'"]+)['"]\s*,\s*['"](\d+)['"]\)[^>]*>([\s\S]*?\.(?:hwp|hwpx)[\s\S]*?)<\/a>/i);
-              if (jsM) {
-                hwpFileUrl = `${BASE_URL}/cmm/fms/FileDown.do?atchFileId=${jsM[1]}&fileSn=${jsM[2]}`;
-                hwpFileName = jsM[3].replace(/<[^>]+>/g, '').trim();
-              }
-            }
+            const r = findFileLink(detailHtml, /\.(?:hwp|hwpx)/i, detailBase);
+            if (r.url) { hwpFileUrl = r.url; hwpFileName = r.name; }
           }
 
           const createdMeeting = await prisma.committee_meetings.create({
