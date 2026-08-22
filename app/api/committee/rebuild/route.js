@@ -25,25 +25,50 @@ function cleanText(text = '') {
     .trim();
 }
 
+const BASE_URL = 'https://www.mfds.go.kr';
+const FETCH_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  'Accept-Language': 'ko-KR,ko;q=0.9',
+  'Referer': 'https://www.mfds.go.kr/brd/m_532/list.do',
+};
+
+// 상세 페이지 HTML에서 PDF/HWP URL 추출
+function extractAttachmentUrl(html, type = 'pdf') {
+  const ext = type === 'pdf' ? '\\.pdf' : '\\.(?:hwp|hwpx)';
+  const m = html.match(new RegExp(
+    `<a\\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download|atchFile)[^"']*)["'][^>]*>([\\s\\S]*?${ext})[\\s\\S]*?<\\/a>`, 'i'
+  ));
+  if (!m) return { url: null, name: null };
+  const url = m[1].startsWith('http') ? m[1] : `${BASE_URL}${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
+  const name = m[2].replace(/<[^>]+>/g, '').trim();
+  return { url, name };
+}
+
 async function extractPdfText(pdfUrl) {
-  if (!pdfUrl) return null;
+  if (!pdfUrl) return { text: null, error: 'URL 없음' };
   try {
     const response = await fetch(pdfUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(8000),
+      headers: { ...FETCH_HEADERS, 'Accept': 'application/pdf,*/*' },
+      signal: AbortSignal.timeout(10000),
     });
-    if (!response.ok) return null;
+    if (!response.ok) return { text: null, error: `HTTP ${response.status}` };
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('pdf') && !contentType.includes('octet')) {
+      return { text: null, error: `콘텐츠 타입 불일치: ${contentType.substring(0, 40)}` };
+    }
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    if (buffer.length < 100) return { text: null, error: '파일 크기 너무 작음' };
 
-    // pdf-parse를 동적으로 로드 (webpack 이슈 우회)
     const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
-    const data = await pdfParse(buffer, { max: 10 }); // 최대 10페이지
-    return data.text ? data.text.substring(0, 6000) : null;
+    const data = await pdfParse(buffer, { max: 10 });
+    const text = (data.text || '').trim();
+    if (!text) return { text: null, error: '텍스트 없음(이미지 PDF)' };
+    return { text: text.substring(0, 6000), error: null };
   } catch (e) {
-    console.warn('PDF extract failed:', e.message);
-    return null;
+    return { text: null, error: e.message?.substring(0, 60) };
   }
 }
 
@@ -69,12 +94,6 @@ export async function POST(req) {
     const batchSize = Math.min(parseInt(body.batch || '3'), 5);
     const offset = parseInt(body.offset || '0');
     const mode = body.mode || 'missing'; // 'missing': 빠진 것만, 'all': 전체
-
-    const BASE_URL = 'https://www.mfds.go.kr';
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept-Language': 'ko-KR,ko;q=0.9',
-    };
 
     // 처리 대상 조회 (오래된 것 → 최신 순으로 처리)
     const where = mode === 'missing'
@@ -107,24 +126,44 @@ export async function POST(req) {
       let rawText = meeting.rawContent;
 
       // 1. rawContent 재수집 (없거나 강제 재수집 모드)
-      if (!rawText && meeting.sourceUrl) {
+      let detailHtml = null;
+      if ((!rawText || !meeting.pdfFileUrl) && meeting.sourceUrl) {
         try {
-          const resp = await fetch(meeting.sourceUrl, { headers, signal: AbortSignal.timeout(8000) });
+          const resp = await fetch(meeting.sourceUrl, { headers: FETCH_HEADERS, signal: AbortSignal.timeout(8000) });
           if (resp.ok) {
-            const html = await resp.text();
-            rawText = cleanText(html).substring(0, 8000);
-            updateData.rawContent = rawText;
+            detailHtml = await resp.text();
+            if (!rawText) {
+              rawText = cleanText(detailHtml).substring(0, 8000);
+              updateData.rawContent = rawText;
+            }
           }
         } catch (e) {
-          console.warn(`rawContent fetch failed for ${meeting.seq}:`, e.message);
+          console.warn(`detail fetch failed for ${meeting.seq}:`, e.message);
+        }
+      }
+
+      // 1-1. pdfFileUrl이 DB에 없으면 상세페이지 HTML에서 재탐색
+      let pdfFileUrl = meeting.pdfFileUrl;
+      if (!pdfFileUrl && detailHtml) {
+        const { url, name } = extractAttachmentUrl(detailHtml, 'pdf');
+        if (url) {
+          pdfFileUrl = url;
+          updateData.pdfFileUrl = url;
+          if (name) updateData.pdfFileName = name;
         }
       }
 
       // 2. PDF 텍스트 추출 (없는 경우)
       let pdfText = meeting.pdfContent;
-      if (!pdfText && meeting.pdfFileUrl) {
-        pdfText = await extractPdfText(meeting.pdfFileUrl);
-        if (pdfText) updateData.pdfContent = pdfText;
+      let pdfError = null;
+      if (!pdfText) {
+        if (pdfFileUrl) {
+          const { text, error } = await extractPdfText(pdfFileUrl);
+          if (text) { pdfText = text; updateData.pdfContent = text; }
+          else pdfError = error;
+        } else {
+          pdfError = '첨부 PDF 없음';
+        }
       }
 
       // 3. 회의 전체 내용 임베딩 생성
@@ -158,6 +197,7 @@ export async function POST(req) {
         hasRaw: !!updateData.rawContent || !!meeting.rawContent,
         hasPdf: !!updateData.pdfContent || !!meeting.pdfContent,
         hasEmbed: !!updateData.contentEmbedding || !!meeting.contentEmbedding,
+        pdfError,
       });
     }
 

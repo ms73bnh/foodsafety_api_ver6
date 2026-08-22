@@ -129,13 +129,16 @@ export async function fetchArticlesFromPage(pageNum, headers, BASE_URL) {
     let pdfFileName = null, pdfFileUrl = null;
     let hwpFileName = null, hwpFileUrl = null;
 
-    const pdfMatch = block.match(/<a\s+[^>]*href=["']([^"']*download[^"']*)["'][^>]*>([\s\S]*?\.pdf)[\s\S]*?<\/a>/i);
+    // 식약처 첨부파일 URL 패턴: /cmm/fms/FileDown.do, /download, /fileDown 등 다양
+    const FILE_HREF_PAT = /href=["']([^"']*(?:FileDown|fileDown|download|file_down|atchFile)[^"']*)["']/i;
+    const pdfMatch = block.match(new RegExp(FILE_HREF_PAT.source + '[^>]*>([^<]*\\.pdf)', 'i')) ||
+                     block.match(/<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?\.pdf)[\s\S]*?<\/a>/i);
     if (pdfMatch) {
       pdfFileUrl = pdfMatch[1].startsWith('http') ? pdfMatch[1] : `${BASE_URL}${pdfMatch[1].startsWith('/') ? '' : '/'}${pdfMatch[1]}`;
       pdfFileName = pdfMatch[2].replace(/<[^>]+>/g, '').trim();
     }
 
-    const hwpMatch = block.match(/<a\s+[^>]*href=["']([^"']*download[^"']*)["'][^>]*>([\s\S]*?\.(?:hwp|hwpx))[\s\S]*?<\/a>/i);
+    const hwpMatch = block.match(/<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?\.(?:hwp|hwpx))[\s\S]*?<\/a>/i);
     if (hwpMatch) {
       hwpFileUrl = hwpMatch[1].startsWith('http') ? hwpMatch[1] : `${BASE_URL}${hwpMatch[1].startsWith('/') ? '' : '/'}${hwpMatch[1]}`;
       hwpFileName = hwpMatch[2].replace(/<[^>]+>/g, '').trim();
@@ -220,14 +223,14 @@ export async function POST(req) {
           let hwpFileName = art.hwpFileName, hwpFileUrl = art.hwpFileUrl;
 
           if (!pdfFileUrl) {
-            const mPdf = detailHtml.match(/<a\s+[^>]*href=["']([^"']*download[^"']*)["'][^>]*>([\s\S]*?\.pdf)[\s\S]*?<\/a>/i);
+            const mPdf = detailHtml.match(/<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?\.pdf)[\s\S]*?<\/a>/i);
             if (mPdf) {
               pdfFileUrl = mPdf[1].startsWith('http') ? mPdf[1] : `${BASE_URL}${mPdf[1].startsWith('/') ? '' : '/'}${mPdf[1]}`;
               pdfFileName = mPdf[2].replace(/<[^>]+>/g, '').trim();
             }
           }
           if (!hwpFileUrl) {
-            const mHwp = detailHtml.match(/<a\s+[^>]*href=["']([^"']*download[^"']*)["'][^>]*>([\s\S]*?\.(?:hwp|hwpx))[\s\S]*?<\/a>/i);
+            const mHwp = detailHtml.match(/<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?\.(?:hwp|hwpx))[\s\S]*?<\/a>/i);
             if (mHwp) {
               hwpFileUrl = mHwp[1].startsWith('http') ? mHwp[1] : `${BASE_URL}${mHwp[1].startsWith('/') ? '' : '/'}${mHwp[1]}`;
               hwpFileName = mHwp[2].replace(/<[^>]+>/g, '').trim();

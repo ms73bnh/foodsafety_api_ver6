@@ -1606,7 +1606,7 @@ function ManagePageInner() {
                   const data = await res.json();
                   if (data.error) { setRebuildLog(prev => [...prev, `오류: ${data.error}`]); break; }
                   total += data.processed || 0;
-                  (data.results || []).forEach(r => setRebuildLog(prev => [...prev, `[${r.id}] ${r.title?.substring(0, 28)}... | 본문:${r.hasRaw ? '✓' : '✗'} PDF:${r.hasPdf ? '✓' : '✗'} 임베딩:${r.hasEmbed ? '✓' : '✗'}`]));
+                  (data.results || []).forEach(r => setRebuildLog(prev => [...prev, `[${r.id}] ${r.title?.substring(0, 28)}... | 본문:${r.hasRaw ? '✓' : '✗'} PDF:${r.hasPdf ? '✓' : r.pdfError ? `✗(${r.pdfError})` : '✗'} 임베딩:${r.hasEmbed ? '✓' : '✗'}`]));
                   if (data.done || data.processed === 0) { setRebuildLog(prev => [...prev, `완료! 총 ${total}건 처리됨`]); break; }
                   offset = data.nextOffset || (offset + 3);
                   await new Promise(r => setTimeout(r, 1000));
