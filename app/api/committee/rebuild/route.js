@@ -41,17 +41,19 @@ function extractAttachmentUrl(html, type = 'pdf', sourceUrl = '') {
   // sourceUrl에서 base 경로 추출 (예: https://www.mfds.go.kr/brd/m_532/)
   let basePath = BASE_URL;
   if (sourceUrl) {
-    const u = new URL(sourceUrl);
-    basePath = `${u.protocol}//${u.host}${u.pathname.substring(0, u.pathname.lastIndexOf('/') + 1)}`;
+    try {
+      const u = new URL(sourceUrl);
+      basePath = `${u.protocol}//${u.host}${u.pathname.substring(0, u.pathname.lastIndexOf('/') + 1)}`;
+    } catch (e) {}
   }
 
-  // 패턴1 (실제 식약처): ./down.do?... 또는 /brd/xxx/down.do?...
+  // 패턴1 (실제 식약처): ./down.do?... - &amp; 디코딩 필수
   const downRe = /<a\s+[^>]*href=["']([^"']*down\.do\?[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = downRe.exec(html)) !== null) {
     const text = m[2].replace(/<[^>]+>/g, '').trim();
     if (extPat.test(text)) {
-      const rawHref = m[1];
+      const rawHref = m[1].replace(/&amp;/g, '&');  // HTML 엔티티 디코딩
       let url;
       if (rawHref.startsWith('http')) url = rawHref;
       else if (rawHref.startsWith('./')) url = basePath + rawHref.slice(2);
@@ -134,9 +136,11 @@ export async function POST(req) {
     const offset = parseInt(body.offset || '0');
     const mode = body.mode || 'missing'; // 'missing': 빠진 것만, 'all': 전체
 
-    // 처리 대상 조회 (오래된 것 → 최신 순으로 처리)
+    // 처리 대상 조회
     const where = mode === 'missing'
-      ? { OR: [{ rawContent: null }, { contentEmbedding: null }] }
+      ? { OR: [{ rawContent: null }, { contentEmbedding: null }, { pdfFileUrl: null }] }
+      : mode === 'pdf'
+      ? { pdfFileUrl: null }  // PDF URL만 없는 것
       : {};
 
     const meetings = await prisma.committee_meetings.findMany({

@@ -14,7 +14,7 @@ function findFileLink(src, extPat, baseUrl) {
   while ((m = downRe.exec(src)) !== null) {
     const text = m[2].replace(/<[^>]+>/g, '').trim();
     if (extPat.test(text)) {
-      const raw = m[1];
+      const raw = m[1].replace(/&amp;/g, '&');  // HTML 엔티티 디코딩
       const url = raw.startsWith('http') ? raw : raw.startsWith('./') ? `${baseUrl}${raw.slice(2)}` : `${BASE_URL_SYNC}${raw.startsWith('/') ? '' : '/'}${raw}`;
       return { url, name: text };
     }
