@@ -335,6 +335,15 @@ model committee_meetings {
   agendas      committee_agendas[]
 }
 
+// 시스템 설정 키-값 저장소
+model system_settings {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
 model committee_agendas {
   id           Int                @id @default(autoincrement())
   meetingId    Int

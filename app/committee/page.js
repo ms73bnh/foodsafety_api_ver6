@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 
 const QUICK_QUESTIONS = [
   "제202차 건강기능식품심의위원회 회의 결과를 요약해줘",
@@ -158,6 +159,10 @@ export default function CommitteePage() {
   const [chatLoading, setChatLoading] = useState(false);
   const [remaining, setRemaining] = useState(20);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptMsg, setPromptMsg] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -181,9 +186,15 @@ export default function CommitteePage() {
       .then(res => res.json())
       .then(data => {
         if (data) {
-          setIsAdmin(!!data.isAdmin);
-          if (data.isAdmin) {
+          const admin = !!data.isAdmin;
+          setIsAdmin(admin);
+          if (admin) {
             setRemaining(9999);
+            // 관리자인 경우 커스텀 프롬프트 로드
+            fetch('/api/committee/settings')
+              .then(r => r.json())
+              .then(d => setSystemPrompt(d.value || ""))
+              .catch(() => {});
           } else if (typeof data.remaining === 'number') {
             setRemaining(data.remaining);
           }
@@ -191,6 +202,34 @@ export default function CommitteePage() {
       })
       .catch(() => {});
   }, []);
+
+  const handleSavePrompt = async () => {
+    setPromptSaving(true);
+    setPromptMsg("");
+    try {
+      const res = await fetch('/api/committee/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: systemPrompt }),
+      });
+      const data = await res.json();
+      setPromptMsg(data.success ? "✅ 저장되었습니다." : `❌ ${data.error}`);
+    } catch (e) {
+      setPromptMsg("❌ 저장 중 오류 발생");
+    } finally {
+      setPromptSaving(false);
+    }
+  };
+
+  const handleResetPrompt = async () => {
+    if (!confirm("기본 프롬프트로 초기화하시겠습니까?")) return;
+    const res = await fetch('/api/committee/settings', { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      setSystemPrompt(data.value);
+      setPromptMsg("✅ 기본 프롬프트로 초기화되었습니다.");
+    }
+  };
 
   // ── 데이터 조회 ──────────────────────────────────────────────────────────
   
@@ -605,13 +644,16 @@ export default function CommitteePage() {
                     borderRadius: 12,
                     fontSize: "0.85rem",
                     lineHeight: 1.6,
-                    whiteSpace: "pre-line",
                     background: msg.role === "user" ? "#0284c7" : "#fff",
                     color: msg.role === "user" ? "#fff" : "#1e293b",
                     border: msg.role === "user" ? "none" : "1px solid #e2e8f0",
                     boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
                   }}>
-                    {msg.content || (chatLoading && i === messages.length - 1 ? "회의록 검색 및 답변 생성 중..." : "")}
+                    {msg.content
+                      ? (msg.role === "user"
+                        ? <span style={{ whiteSpace: "pre-line" }}>{msg.content}</span>
+                        : <div className="md-body"><ReactMarkdown>{msg.content}</ReactMarkdown></div>)
+                      : (chatLoading && i === messages.length - 1 ? "회의록 검색 및 답변 생성 중..." : "")}
                   </div>
 
                   {/* 인용된 회의록 참고자료 카드 */}
@@ -656,6 +698,68 @@ export default function CommitteePage() {
                 </button>
               ))}
             </div>
+
+            {/* 관리자 프롬프트 편집 패널 */}
+            {isAdmin && (
+              <div style={{ borderTop: "1px solid #e2e8f0", background: "#f8fafc" }}>
+                <button
+                  onClick={() => setShowPromptEditor(v => !v)}
+                  style={{
+                    width: "100%", padding: "8px 16px", background: "none", border: "none",
+                    display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+                    fontSize: "0.76rem", fontWeight: 700, color: "#475569"
+                  }}
+                >
+                  <i className={`fa-solid fa-${showPromptEditor ? "chevron-up" : "chevron-down"}`} style={{ fontSize: "0.7rem" }} />
+                  <i className="fa-solid fa-sliders" style={{ color: "#0284c7" }} />
+                  AI 시스템 프롬프트 설정 (관리자)
+                </button>
+                {showPromptEditor && (
+                  <div style={{ padding: "0 14px 14px" }}>
+                    <textarea
+                      value={systemPrompt}
+                      onChange={e => { setSystemPrompt(e.target.value); setPromptMsg(""); }}
+                      rows={8}
+                      placeholder="AI에게 내릴 시스템 지시문을 입력하세요. (답변 형식, 어투, 금지 내용 등)"
+                      style={{
+                        width: "100%", padding: "10px 12px", border: "1px solid #cbd5e1",
+                        borderRadius: 8, fontSize: "0.78rem", lineHeight: 1.6,
+                        resize: "vertical", outline: "none", fontFamily: "inherit",
+                        boxSizing: "border-box"
+                      }}
+                    />
+                    {promptMsg && (
+                      <div style={{ fontSize: "0.76rem", marginTop: 4, color: promptMsg.startsWith("✅") ? "#16a34a" : "#dc2626" }}>
+                        {promptMsg}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                      <button
+                        onClick={handleSavePrompt}
+                        disabled={promptSaving}
+                        style={{
+                          padding: "6px 14px", background: "#0284c7", color: "#fff",
+                          border: "none", borderRadius: 7, fontSize: "0.78rem", fontWeight: 700,
+                          cursor: "pointer"
+                        }}
+                      >
+                        {promptSaving ? "저장 중..." : "💾 저장"}
+                      </button>
+                      <button
+                        onClick={handleResetPrompt}
+                        style={{
+                          padding: "6px 12px", background: "#f1f5f9", color: "#64748b",
+                          border: "1px solid #e2e8f0", borderRadius: 7, fontSize: "0.78rem",
+                          fontWeight: 600, cursor: "pointer"
+                        }}
+                      >
+                        기본값 초기화
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 챗봇 입력창 */}
             <div style={{ padding: "12px 16px", borderTop: "1px solid #e2e8f0", background: "#fff" }}>
