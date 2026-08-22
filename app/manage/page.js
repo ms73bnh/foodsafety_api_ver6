@@ -577,6 +577,9 @@ function ManagePageInner() {
          <button onClick={() => { setActiveTab('notices'); setShowNoticeForm(false); setEditingNotice(null); }} className={`btn ${activeTab === 'notices' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'notices' ? 'linear-gradient(135deg, #f59e0b, #ef4444)' : 'transparent', border: 'none', color: activeTab === 'notices' ? '#fff' : '#f59e0b', fontSize: '0.9rem', fontWeight: 600 }}>
             <i className="fa-solid fa-bullhorn" style={{marginRight: '8px'}}></i> 팝업 공지 관리
          </button>
+         <a href="/manage/menu" className="btn" style={{ background: 'linear-gradient(135deg, #7c3aed, #0284c7)', border: 'none', color: '#fff', fontSize: '0.9rem', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+            <i className="fa-solid fa-bars" style={{marginRight: '8px'}}></i> 메뉴 & 권한 관리
+         </a>
       </div>
 
       {/* 1. Sync & Logs Tab */}
