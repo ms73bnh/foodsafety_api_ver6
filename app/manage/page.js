@@ -52,6 +52,14 @@ function ManagePageInner() {
   const [editSaving, setEditSaving] = useState(false);
   const [showPasswordReset, setShowPasswordReset] = useState(false);
 
+  // 메뉴 관리 상태
+  const [menuConfig, setMenuConfig] = useState([]);
+  const [menuSaving, setMenuSaving] = useState(false);
+  const [menuMsg, setMenuMsg] = useState({ text: '', error: false });
+  const [rebuildStatus, setRebuildStatus] = useState(null);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [rebuildLog, setRebuildLog] = useState([]);
+
   // 공지사항 관리 상태
   const [notices, setNotices] = useState([]);
   const [noticesLoading, setNoticesLoading] = useState(false);
@@ -255,6 +263,9 @@ function ManagePageInner() {
       fetchUsers();
     } else if (activeTab === 'audit') {
       fetchAuditLogs();
+    } else if (activeTab === 'menu') {
+      fetch('/api/menu-visibility').then(r => r.json()).then(d => setMenuConfig(d.config || [])).catch(() => {});
+      fetch('/api/committee/rebuild').then(r => r.json()).then(d => setRebuildStatus(d)).catch(() => {});
     } else if (activeTab === 'notices') {
       fetchNotices();
     }
@@ -577,9 +588,9 @@ function ManagePageInner() {
          <button onClick={() => { setActiveTab('notices'); setShowNoticeForm(false); setEditingNotice(null); }} className={`btn ${activeTab === 'notices' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'notices' ? 'linear-gradient(135deg, #f59e0b, #ef4444)' : 'transparent', border: 'none', color: activeTab === 'notices' ? '#fff' : '#f59e0b', fontSize: '0.9rem', fontWeight: 600 }}>
             <i className="fa-solid fa-bullhorn" style={{marginRight: '8px'}}></i> 팝업 공지 관리
          </button>
-         <a href="/manage/menu" className="btn" style={{ background: 'linear-gradient(135deg, #7c3aed, #0284c7)', border: 'none', color: '#fff', fontSize: '0.9rem', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+         <button onClick={() => { setActiveTab('menu'); }} className={`btn ${activeTab === 'menu' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'menu' ? 'linear-gradient(135deg, #7c3aed, #0284c7)' : 'transparent', border: 'none', color: activeTab === 'menu' ? '#fff' : '#7c3aed', fontSize: '0.9rem', fontWeight: 600 }}>
             <i className="fa-solid fa-bars" style={{marginRight: '8px'}}></i> 메뉴 & 권한 관리
-         </a>
+         </button>
       </div>
 
       {/* 1. Sync & Logs Tab */}
@@ -1481,6 +1492,136 @@ function ManagePageInner() {
                       </button>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'menu' && (
+        <div className="animate-fade-in">
+          {/* 메뉴 노출 설정 */}
+          <div className="glass-panel" style={{ marginBottom: '24px' }}>
+            <h3 style={{ color: 'var(--text-color)', margin: '0 0 6px' }}>
+              <i className="fa-solid fa-eye" style={{ marginRight: '8px', color: '#0284c7' }}></i>메뉴 노출 & 권한 설정
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>
+              체크 해제된 메뉴는 해당 권한의 사용자에게 표시되지 않습니다. 저장 즉시 반영됩니다.
+            </p>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc' }}>
+                  <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>메뉴</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>활성화</th>
+                  {['ADMIN', 'SALES', 'USER'].map(r => (
+                    <th key={r} style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: r === 'ADMIN' ? '#1d4ed8' : r === 'SALES' ? '#c2410c' : '#16a34a', fontWeight: 600 }}>
+                      {r === 'ADMIN' ? '관리자' : r === 'SALES' ? '영업' : '일반'}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {menuConfig.map(item => (
+                  <tr key={item.key} style={{ borderBottom: '1px solid #f1f5f9', opacity: item.enabled ? 1 : 0.55 }}>
+                    <td style={{ padding: '9px 12px' }}>
+                      {item.group && <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginRight: '6px' }}>└</span>}
+                      <span style={{ fontWeight: item.group ? 400 : 600 }}>{item.label}</span>
+                      <span style={{ fontSize: '0.68rem', color: '#94a3b8', marginLeft: '6px' }}>{item.path}</span>
+                    </td>
+                    <td style={{ padding: '9px 12px', textAlign: 'center' }}>
+                      <input type="checkbox" checked={item.enabled} onChange={() => setMenuConfig(prev => prev.map(m => m.key === item.key ? { ...m, enabled: !m.enabled } : m))} style={{ width: '17px', height: '17px', cursor: 'pointer', accentColor: '#0284c7' }} />
+                    </td>
+                    {['ADMIN', 'SALES', 'USER'].map(role => (
+                      <td key={role} style={{ padding: '9px 12px', textAlign: 'center' }}>
+                        <input type="checkbox" checked={item.visibleTo.includes(role)} disabled={!item.enabled}
+                          onChange={() => setMenuConfig(prev => prev.map(m => {
+                            if (m.key !== item.key) return m;
+                            const vt = m.visibleTo.includes(role) ? m.visibleTo.filter(r => r !== role) : [...m.visibleTo, role];
+                            return { ...m, visibleTo: vt };
+                          }))}
+                          style={{ width: '16px', height: '16px', cursor: item.enabled ? 'pointer' : 'default', accentColor: role === 'ADMIN' ? '#1d4ed8' : role === 'SALES' ? '#c2410c' : '#16a34a' }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {menuMsg.text && (
+              <div style={{ marginTop: '14px', padding: '10px 14px', background: menuMsg.error ? '#fef2f2' : '#f0fdf4', border: `1px solid ${menuMsg.error ? '#fca5a5' : '#86efac'}`, borderRadius: '8px', fontSize: '0.82rem', color: menuMsg.error ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
+                {menuMsg.text}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+              <button onClick={async () => {
+                const res = await fetch('/api/menu-visibility', { method: 'DELETE' });
+                const json = await res.json();
+                if (json.config) { setMenuConfig(json.config); setMenuMsg({ text: '기본값으로 초기화되었습니다.', error: false }); }
+              }} style={{ padding: '9px 16px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}>
+                기본값 초기화
+              </button>
+              <button onClick={async () => {
+                setMenuSaving(true); setMenuMsg({ text: '', error: false });
+                try {
+                  const res = await fetch('/api/menu-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config: menuConfig }) });
+                  const json = await res.json();
+                  setMenuMsg(json.success ? { text: '저장되었습니다. 사용자 메뉴가 즉시 변경됩니다.', error: false } : { text: json.error || '저장 실패', error: true });
+                } catch (e) { setMenuMsg({ text: '네트워크 오류', error: true }); }
+                setMenuSaving(false);
+              }} disabled={menuSaving} style={{ padding: '9px 22px', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, #0284c7, #0d9488)', color: '#fff', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', opacity: menuSaving ? 0.7 : 1 }}>
+                {menuSaving ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>저장 중...</> : <><i className="fa-solid fa-floppy-disk" style={{ marginRight: '6px' }}></i>설정 저장</>}
+              </button>
+            </div>
+          </div>
+
+          {/* 데이터 재구축 */}
+          <div className="glass-panel">
+            <h3 style={{ color: 'var(--text-color)', margin: '0 0 6px' }}>
+              <i className="fa-solid fa-database" style={{ marginRight: '8px', color: '#7c3aed' }}></i>심의위원회 데이터 재구축
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '16px' }}>
+              게시물 본문 재수집, PDF 텍스트 추출, 회의 임베딩 생성. 누락된 항목만 처리합니다.
+            </p>
+            {rebuildStatus && (
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                {[['전체 회의', rebuildStatus.total, '#0284c7'], ['본문 있음', rebuildStatus.hasContent, '#16a34a'], ['임베딩 완료', rebuildStatus.hasEmbedding, '#7c3aed'], ['처리 필요', rebuildStatus.pending, '#f59e0b']].map(([label, val, color]) => (
+                  <div key={label} style={{ flex: '1 1 100px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 700, color }}>{val ?? '-'}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ padding: '12px 16px', background: '#fefce8', border: '1px solid #fef08a', borderRadius: '8px', fontSize: '0.8rem', color: '#713f12', marginBottom: '14px' }}>
+              HWP 파일은 바이너리 포맷으로 텍스트 추출 불가. PDF만 지원됩니다.
+            </div>
+            <button onClick={async () => {
+              if (!confirm('누락된 본문/PDF/임베딩을 재구축합니다. 진행하시겠습니까?')) return;
+              setRebuilding(true); setRebuildLog([]);
+              let offset = 0, total = 0;
+              try {
+                while (true) {
+                  const res = await fetch('/api/committee/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 'missing' }) });
+                  const data = await res.json();
+                  if (data.error) { setRebuildLog(prev => [...prev, `오류: ${data.error}`]); break; }
+                  total += data.processed || 0;
+                  (data.results || []).forEach(r => setRebuildLog(prev => [...prev, `[${r.id}] ${r.title?.substring(0, 28)}... | 본문:${r.hasRaw ? '✓' : '✗'} PDF:${r.hasPdf ? '✓' : '✗'} 임베딩:${r.hasEmbed ? '✓' : '✗'}`]));
+                  if (data.done || data.processed === 0) { setRebuildLog(prev => [...prev, `완료! 총 ${total}건 처리됨`]); break; }
+                  offset = data.nextOffset || (offset + 3);
+                  await new Promise(r => setTimeout(r, 1000));
+                }
+              } catch (e) { setRebuildLog(prev => [...prev, `오류: ${e.message}`]); }
+              const status = await fetch('/api/committee/rebuild').then(r => r.json()).catch(() => null);
+              if (status) setRebuildStatus(status);
+              setRebuilding(false);
+            }} disabled={rebuilding} style={{ padding: '10px 22px', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, #7c3aed, #0284c7)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: rebuilding ? 0.7 : 1 }}>
+              {rebuilding ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>재구축 진행 중...</> : <><i className="fa-solid fa-rotate" style={{ marginRight: '6px' }}></i>누락 데이터 재구축 시작</>}
+            </button>
+            {rebuildLog.length > 0 && (
+              <div style={{ marginTop: '14px', background: '#0f172a', borderRadius: '8px', padding: '14px', maxHeight: '200px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.73rem' }}>
+                {rebuildLog.map((line, i) => (
+                  <div key={i} style={{ marginBottom: '3px', color: line.startsWith('완료') ? '#86efac' : line.startsWith('오류') ? '#fca5a5' : '#94a3b8' }}>{line}</div>
                 ))}
               </div>
             )}
