@@ -158,12 +158,31 @@ export async function POST(req) {
       console.warn('Embedding generation failed, falling back to keyword search:', embErr.message);
     }
 
-    // 2. DB에서 전체 심의 안건 로드 (최신 500개)
-    const allAgendas = await prisma.committee_agendas.findMany({
-      include: { meeting: true },
-      orderBy: { id: 'desc' },
-      take: 500,
-    });
+    // 2. DB에서 전체 심의 안건 로드 (최신 500개) + 회의 본문 키워드 검색
+    const [allAgendas, meetingsByKeyword] = await Promise.all([
+      prisma.committee_agendas.findMany({
+        include: { meeting: true },
+        orderBy: { id: 'desc' },
+        take: 500,
+      }),
+      // 회의 rawContent에서 키워드 검색 (위원명단, 참석자 등 본문 정보 커버)
+      (async () => {
+        const keywords = cleanQuestion.split(/[\s,]+/).filter(k => k.length >= 2);
+        if (!keywords.length) return [];
+        try {
+          return await prisma.committee_meetings.findMany({
+            where: {
+              OR: keywords.map(k => ({
+                rawContent: { contains: k }
+              }))
+            },
+            orderBy: { id: 'desc' },
+            take: 5,
+            select: { id: true, title: true, meetingNo: true, meetingDate: true, postDate: true, department: true, rawContent: true }
+          });
+        } catch (e) { return []; }
+      })()
+    ]);
 
     // 3. 하이브리드 유사도 계산
     const scored = allAgendas.map(item => {
@@ -182,18 +201,25 @@ export async function POST(req) {
     });
 
     scored.sort((a, b) => b.score - a.score);
-    const topMatches = scored.slice(0, 6);
+    const topMatches = scored.slice(0, 5);
 
-    // 4. 프롬프트 구성
-    const contextItems = topMatches.map((m, idx) => {
-      return `[참고자료 ${idx + 1}]
+    // 4. 프롬프트 구성 (안건 참고자료 + 회의 본문 참고자료)
+    const agendaContext = topMatches.map((m, idx) => `[안건자료 ${idx + 1}]
 - 회의명: ${m.meeting?.title || '식약처 건강기능식품심의위원회'}
 - 일시: ${m.meeting?.meetingDate || m.meeting?.postDate || '날짜 미상'}
-- 담당부서: ${m.meeting?.department || '영양기능연구과'}
 - 안건(원료명): ${m.ingredientName} (${m.agendaType || '신규인정'})
 - 심의결과: ${m.result}
-- 안건원문: ${m.rawName}`;
+- 안건원문: ${m.rawName}`).join('\n\n');
+
+    const meetingContext = meetingsByKeyword.map((m, idx) => {
+      const snippet = (m.rawContent || '').substring(0, 800);
+      return `[회의본문자료 ${idx + 1}]
+- 회의명: ${m.title}
+- 회차: ${m.meetingNo || '-'} / 일시: ${m.meetingDate || m.postDate || '-'}
+- 본문 발췌:\n${snippet}`;
     }).join('\n\n');
+
+    const contextItems = [agendaContext, meetingContext].filter(Boolean).join('\n\n---\n\n');
 
 
     const prompt = `${systemInstruction}
