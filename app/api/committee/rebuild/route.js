@@ -35,10 +35,9 @@ const FETCH_HEADERS = {
 // 식약처 첨부파일 URL 추출
 // 실제 패턴: <a href="./down.do?brd_id=plc0062&seq=33423&data_tp=A&file_seq=1">파일명.pdf</a>
 // 폴백 패턴: FileDown.do, fn_egov_downFile, fn_fileDown 등
-function extractAttachmentUrl(html, type = 'pdf', sourceUrl = '') {
-  const extPat = type === 'pdf' ? /\.pdf/i : /\.(?:hwp|hwpx)/i;
-
-  // sourceUrl에서 base 경로 추출 (예: https://www.mfds.go.kr/brd/m_532/)
+// 식약처 HTML에서 모든 down.do 다운로드 URL을 추출 (배열 반환)
+// 링크 텍스트가 "다운받기" 등 일반 텍스트일 수 있으므로 파일 타입은 실제 fetch로 판별
+function extractAllDownUrls(html, sourceUrl = '') {
   let basePath = BASE_URL;
   if (sourceUrl) {
     try {
@@ -47,63 +46,40 @@ function extractAttachmentUrl(html, type = 'pdf', sourceUrl = '') {
     } catch (e) {}
   }
 
-  // 패턴1 (실제 식약처): ./down.do?... - &amp; 디코딩 필수
-  // eGovFrame은 파일명이 <a> 태그 밖에 있는 경우가 많아 주변 컨텍스트도 확인
-  const downRe = /<a\s+[^>]*href=["']([^"']*down\.do\?[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const urls = [];
   let m;
+
+  // 패턴1: ./down.do?... (실제 식약처 패턴, &amp; 디코딩 필수)
+  const downRe = /<a\s+[^>]*href=["']([^"']*down\.do\?[^"']*)["'][^>]*>/gi;
   while ((m = downRe.exec(html)) !== null) {
-    const linkText = m[2].replace(/<[^>]+>/g, '').trim();
     const rawHref = m[1].replace(/&amp;/g, '&');
-
-    // 링크 텍스트에서 확장자 확인
-    let matchedName = extPat.test(linkText) ? linkText : null;
-
-    // 링크 텍스트에 없으면 주변 300자에서 파일명 탐색
-    if (!matchedName) {
-      const ctx = html.substring(m.index, m.index + m[0].length + 300);
-      const fnMatch = ctx.match(/[\w가-힣()[\]\-_ ]+\.(?:pdf|PDF)/);
-      if (fnMatch && extPat.test(fnMatch[0])) matchedName = fnMatch[0].trim();
-    }
-
-    // file_seq 파라미터가 있으면 PDF 다운로드 링크로 신뢰
-    if (!matchedName && /file_seq=\d+/i.test(rawHref) && type === 'pdf') {
-      matchedName = '첨부파일.pdf';
-    }
-
-    if (matchedName) {
-      let url;
-      if (rawHref.startsWith('http')) url = rawHref;
-      else if (rawHref.startsWith('./')) url = basePath + rawHref.slice(2);
-      else url = `${BASE_URL}${rawHref.startsWith('/') ? '' : '/'}${rawHref}`;
-      return { url, name: matchedName };
-    }
+    let url;
+    if (rawHref.startsWith('http')) url = rawHref;
+    else if (rawHref.startsWith('./')) url = basePath + rawHref.slice(2);
+    else url = `${BASE_URL}${rawHref.startsWith('/') ? '' : '/'}${rawHref}`;
+    if (!urls.includes(url)) urls.push(url);
   }
 
-  // 패턴2: href에 직접 FileDown URL이 있는 경우
-  const fileDownRe = /<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  while ((m = fileDownRe.exec(html)) !== null) {
-    const text = m[2].replace(/<[^>]+>/g, '').trim();
-    if (extPat.test(text) || extPat.test(m[1])) {
-      const url = m[1].startsWith('http') ? m[1] : `${BASE_URL}${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
-      return { url, name: text };
-    }
+  // 패턴2: FileDown.do
+  const fdRe = /<a\s+[^>]*href=["']([^"']*FileDown\.do\?[^"']*)["'][^>]*>/gi;
+  while ((m = fdRe.exec(html)) !== null) {
+    const url = m[1].startsWith('http') ? m[1] : `${BASE_URL}${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
+    if (!urls.includes(url)) urls.push(url);
   }
 
-  // 패턴3: javascript:fn_egov_downFile 방식
-  const jsRe = /<a\s+[^>]*href=["']javascript:fn_(?:egov_downFile|fileDown|atchFileDown)\(['"]([^'"]+)['"]\s*,\s*['"](\d+)['"]\)[^>]*>([\s\S]*?)<\/a>/gi;
+  // 패턴3: javascript:fn_egov_downFile('ID','N')
+  const jsRe = /javascript:fn_(?:egov_downFile|fileDown|atchFileDown)\(['"]([^'"]+)['"]\s*,\s*['"](\d+)['"]\)/gi;
   while ((m = jsRe.exec(html)) !== null) {
-    const text = m[3].replace(/<[^>]+>/g, '').trim();
-    if (extPat.test(text)) {
-      const url = `${BASE_URL}/cmm/fms/FileDown.do?atchFileId=${m[1]}&fileSn=${m[2]}`;
-      return { url, name: text };
-    }
+    const url = `${BASE_URL}/cmm/fms/FileDown.do?atchFileId=${m[1]}&fileSn=${m[2]}`;
+    if (!urls.includes(url)) urls.push(url);
   }
 
-  return { url: null, name: null };
+  return urls;
 }
 
+// PDF 매직바이트(%PDF)로 실제 PDF 여부 판별 후 텍스트 추출
 async function extractPdfText(pdfUrl) {
-  if (!pdfUrl) return { text: null, error: 'URL 없음' };
+  if (!pdfUrl || pdfUrl === 'NONE') return { text: null, error: 'URL 없음' };
   try {
     const response = await fetch(pdfUrl, {
       headers: { ...FETCH_HEADERS, 'Accept': 'application/pdf,*/*' },
@@ -111,14 +87,18 @@ async function extractPdfText(pdfUrl) {
     });
     if (!response.ok) return { text: null, error: `HTTP ${response.status}` };
 
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('pdf') && !contentType.includes('octet')) {
-      return { text: null, error: `콘텐츠 타입 불일치: ${contentType.substring(0, 40)}` };
-    }
-
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    if (buffer.length < 100) return { text: null, error: '파일 크기 너무 작음' };
+    if (buffer.length < 10) return { text: null, error: '파일 너무 작음' };
+
+    // 매직바이트로 파일 타입 판별
+    const magic4 = buffer.slice(0, 4).toString('ascii');
+    if (magic4 !== '%PDF') {
+      const hex4 = buffer.slice(0, 4).toString('hex');
+      if (hex4.startsWith('504b')) return { text: null, error: 'HWP/ZIP 파일', isHwp: true };
+      if (hex4.startsWith('d0cf')) return { text: null, error: 'HWP(구버전) 파일', isHwp: true };
+      return { text: null, error: `PDF 아님(${hex4})` };
+    }
 
     const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
     const data = await pdfParse(buffer, { max: 10 });
@@ -206,33 +186,51 @@ export async function POST(req) {
       // 1-1. pdfFileUrl이 DB에 없으면 상세페이지 HTML에서 재탐색
       // 'NONE'은 "확인 완료, PDF 없음" 마커 - 재시도 안 함
       let pdfFileUrl = meeting.pdfFileUrl;
+      let pdfError = null;
+
       if (!pdfFileUrl && detailHtml) {
-        const { url, name } = extractAttachmentUrl(detailHtml, 'pdf', meeting.sourceUrl || '');
-        if (url) {
-          pdfFileUrl = url;
-          updateData.pdfFileUrl = url;
-          if (name) updateData.pdfFileName = name;
-        } else {
-          // 페이지를 정상적으로 가져왔지만 PDF 링크가 없음 → 마커 저장
+        const candidateUrls = extractAllDownUrls(detailHtml, meeting.sourceUrl || '');
+
+        if (candidateUrls.length === 0) {
           updateData.pdfFileUrl = 'NONE';
           pdfFileUrl = 'NONE';
+          pdfError = 'PDF 없음(확인완료)';
+        } else {
+          // 각 URL을 순서대로 시도하여 첫 번째 실제 PDF URL 사용
+          for (const candidateUrl of candidateUrls) {
+            const { text, error, isHwp } = await extractPdfText(candidateUrl);
+            if (text) {
+              pdfFileUrl = candidateUrl;
+              updateData.pdfFileUrl = candidateUrl;
+              updateData.pdfContent = text;
+              break;
+            }
+            if (!isHwp) {
+              // HWP가 아닌 실패(세션 필요 등)면 URL은 저장하고 중단
+              pdfFileUrl = candidateUrl;
+              updateData.pdfFileUrl = candidateUrl;
+              pdfError = error;
+              break;
+            }
+            // HWP 파일이면 다음 URL 시도
+            pdfError = error;
+          }
+          if (!pdfFileUrl) {
+            updateData.pdfFileUrl = 'NONE';
+            pdfFileUrl = 'NONE';
+          }
         }
       }
 
-      // 2. PDF 텍스트 추출 (없는 경우)
-      let pdfText = meeting.pdfContent;
-      let pdfError = null;
-      if (!pdfText) {
-        if (pdfFileUrl && pdfFileUrl !== 'NONE') {
-          const { text, error } = await extractPdfText(pdfFileUrl);
-          if (text) { pdfText = text; updateData.pdfContent = text; }
-          else {
-            pdfError = error;
-            // 다운로드 실패 (세션 필요 등) - URL은 유지하되 에러 기록
-          }
-        } else {
-          pdfError = pdfFileUrl === 'NONE' ? 'PDF 없음(확인완료)' : '첨부 PDF 없음';
-        }
+      // 2. PDF 텍스트 추출 (URL은 있지만 pdfContent 없는 경우)
+      let pdfText = meeting.pdfContent || updateData.pdfContent;
+      if (!pdfText && pdfFileUrl && pdfFileUrl !== 'NONE' && !updateData.pdfContent) {
+        const { text, error } = await extractPdfText(pdfFileUrl);
+        if (text) { pdfText = text; updateData.pdfContent = text; }
+        else pdfError = pdfError || error;
+      }
+      if (!pdfText && !pdfError) {
+        pdfError = pdfFileUrl === 'NONE' ? 'PDF 없음(확인완료)' : '첨부 PDF 없음';
       }
 
       // 3. 회의 전체 내용 임베딩 생성
