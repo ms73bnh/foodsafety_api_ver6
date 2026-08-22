@@ -3,6 +3,7 @@ import { getEmbedding, cosineSimilarity, streamGeminiResponse } from '@/lib/gemi
 import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 function todayKST() {
   const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
