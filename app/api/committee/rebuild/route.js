@@ -48,17 +48,34 @@ function extractAttachmentUrl(html, type = 'pdf', sourceUrl = '') {
   }
 
   // 패턴1 (실제 식약처): ./down.do?... - &amp; 디코딩 필수
+  // eGovFrame은 파일명이 <a> 태그 밖에 있는 경우가 많아 주변 컨텍스트도 확인
   const downRe = /<a\s+[^>]*href=["']([^"']*down\.do\?[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = downRe.exec(html)) !== null) {
-    const text = m[2].replace(/<[^>]+>/g, '').trim();
-    if (extPat.test(text)) {
-      const rawHref = m[1].replace(/&amp;/g, '&');  // HTML 엔티티 디코딩
+    const linkText = m[2].replace(/<[^>]+>/g, '').trim();
+    const rawHref = m[1].replace(/&amp;/g, '&');
+
+    // 링크 텍스트에서 확장자 확인
+    let matchedName = extPat.test(linkText) ? linkText : null;
+
+    // 링크 텍스트에 없으면 주변 300자에서 파일명 탐색
+    if (!matchedName) {
+      const ctx = html.substring(m.index, m.index + m[0].length + 300);
+      const fnMatch = ctx.match(/[\w가-힣()[\]\-_ ]+\.(?:pdf|PDF)/);
+      if (fnMatch && extPat.test(fnMatch[0])) matchedName = fnMatch[0].trim();
+    }
+
+    // file_seq 파라미터가 있으면 PDF 다운로드 링크로 신뢰
+    if (!matchedName && /file_seq=\d+/i.test(rawHref) && type === 'pdf') {
+      matchedName = '첨부파일.pdf';
+    }
+
+    if (matchedName) {
       let url;
       if (rawHref.startsWith('http')) url = rawHref;
       else if (rawHref.startsWith('./')) url = basePath + rawHref.slice(2);
       else url = `${BASE_URL}${rawHref.startsWith('/') ? '' : '/'}${rawHref}`;
-      return { url, name: text };
+      return { url, name: matchedName };
     }
   }
 

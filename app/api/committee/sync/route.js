@@ -12,11 +12,18 @@ function findFileLink(src, extPat, baseUrl) {
   let m;
   const downRe = /<a\s+[^>]*href=["']([^"']*down\.do\?[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
   while ((m = downRe.exec(src)) !== null) {
-    const text = m[2].replace(/<[^>]+>/g, '').trim();
-    if (extPat.test(text)) {
-      const raw = m[1].replace(/&amp;/g, '&');  // HTML 엔티티 디코딩
+    const linkText = m[2].replace(/<[^>]+>/g, '').trim();
+    const raw = m[1].replace(/&amp;/g, '&');
+    let matchedName = extPat.test(linkText) ? linkText : null;
+    if (!matchedName) {
+      const ctx = src.substring(m.index, m.index + m[0].length + 300);
+      const fnMatch = ctx.match(/[\w가-힣()[\]\-_ ]+\.(?:pdf|hwp|hwpx|PDF|HWP)/);
+      if (fnMatch && extPat.test(fnMatch[0])) matchedName = fnMatch[0].trim();
+    }
+    if (!matchedName && /file_seq=\d+/i.test(raw)) matchedName = extPat.source.includes('pdf') ? '첨부파일.pdf' : '첨부파일.hwp';
+    if (matchedName) {
       const url = raw.startsWith('http') ? raw : raw.startsWith('./') ? `${baseUrl}${raw.slice(2)}` : `${BASE_URL_SYNC}${raw.startsWith('/') ? '' : '/'}${raw}`;
-      return { url, name: text };
+      return { url, name: matchedName };
     }
   }
   const fdRe = /<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
