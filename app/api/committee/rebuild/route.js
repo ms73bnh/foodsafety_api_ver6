@@ -32,16 +32,50 @@ const FETCH_HEADERS = {
   'Referer': 'https://www.mfds.go.kr/brd/m_532/list.do',
 };
 
-// 상세 페이지 HTML에서 PDF/HWP URL 추출
+// 식약처 eGovFrame 첨부파일 URL 추출
+// 패턴1: <a href="/cmm/fms/FileDown.do?...">파일명.pdf</a>
+// 패턴2: <a href="javascript:fn_egov_downFile('ATCH_FILE_ID','0')">파일명.pdf</a>
+// 패턴3: <a href="javascript:fn_fileDown('ATCH_FILE_ID','0')">파일명.pdf</a>
 function extractAttachmentUrl(html, type = 'pdf') {
-  const ext = type === 'pdf' ? '\\.pdf' : '\\.(?:hwp|hwpx)';
-  const m = html.match(new RegExp(
-    `<a\\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download|atchFile)[^"']*)["'][^>]*>([\\s\\S]*?${ext})[\\s\\S]*?<\\/a>`, 'i'
-  ));
-  if (!m) return { url: null, name: null };
-  const url = m[1].startsWith('http') ? m[1] : `${BASE_URL}${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
-  const name = m[2].replace(/<[^>]+>/g, '').trim();
-  return { url, name };
+  const extPat = type === 'pdf' ? /\.pdf/i : /\.(?:hwp|hwpx)/i;
+
+  // 패턴1: href에 직접 FileDown URL이 있는 경우
+  const directRe = /<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown|download)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = directRe.exec(html)) !== null) {
+    const text = m[2].replace(/<[^>]+>/g, '').trim();
+    if (extPat.test(text) || extPat.test(m[1])) {
+      const url = m[1].startsWith('http') ? m[1] : `${BASE_URL}${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
+      return { url, name: text };
+    }
+  }
+
+  // 패턴2/3: javascript:fn_egov_downFile 또는 fn_fileDown 방식 (eGovFrame 표준)
+  // <a href="javascript:fn_egov_downFile('ATCH_FILE_ID','fileSn')">파일명</a>
+  const jsRe = /<a\s+[^>]*href=["']javascript:fn_(?:egov_downFile|fileDown|atchFileDown)\(['"]([^'"]+)['"]\s*,\s*['"](\d+)['"]\)[^>]*>([\s\S]*?)<\/a>/gi;
+  while ((m = jsRe.exec(html)) !== null) {
+    const text = m[3].replace(/<[^>]+>/g, '').trim();
+    if (extPat.test(text)) {
+      const url = `${BASE_URL}/cmm/fms/FileDown.do?atchFileId=${m[1]}&fileSn=${m[2]}`;
+      return { url, name: text };
+    }
+  }
+
+  // 패턴4: atchFileId가 HTML에 있고 근처 텍스트에 파일명이 있는 경우 (폴백)
+  const atchRe = /atchFileId[=:'"]+([A-Z0-9_]+)[^>]*fileSn[=:'"]+(\d+)/i;
+  const atchM = html.match(atchRe);
+  if (atchM) {
+    // 해당 atchFileId 근처에서 파일명 찾기
+    const idx = html.indexOf(atchM[0]);
+    const ctx = html.substring(Math.max(0, idx - 200), idx + 400);
+    const fileNameM = ctx.match(/>([\w\s()가-힣.-]+\.(?:pdf|hwp|hwpx))</i);
+    if (fileNameM && extPat.test(fileNameM[1])) {
+      const url = `${BASE_URL}/cmm/fms/FileDown.do?atchFileId=${atchM[1]}&fileSn=${atchM[2]}`;
+      return { url, name: fileNameM[1].trim() };
+    }
+  }
+
+  return { url: null, name: null };
 }
 
 async function extractPdfText(pdfUrl) {
