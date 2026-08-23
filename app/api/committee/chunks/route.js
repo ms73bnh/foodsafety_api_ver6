@@ -45,7 +45,7 @@ export async function POST(req) {
       where: { embedding: null },
       orderBy: { id: 'asc' },
       skip: offset,
-      take: batchSize * 5, // 청크 단위로 처리 (회의 단위 아님)
+      take: batchSize * 2, // 청크 단위 처리 (딜레이 포함이므로 작게)
     });
 
     if (chunks.length === 0) return NextResponse.json({ done: true, processed: 0 });
@@ -61,7 +61,12 @@ export async function POST(req) {
           });
           embedded++;
         }
-      } catch (e) { /* Rate limit 등 → 다음 배치에서 재시도 */ }
+        // Rate limit 방지: 임베딩 성공 후 300ms 대기
+        await new Promise(r => setTimeout(r, 300));
+      } catch (e) {
+        // Rate limit이면 1초 대기 후 계속
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
 
     const remaining = await prisma.committee_chunks.count({ where: { embedding: null } });
