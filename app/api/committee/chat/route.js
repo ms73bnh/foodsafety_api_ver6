@@ -236,46 +236,70 @@ export async function POST(req) {
       ).join('\n\n');
     }
 
-    // 4. 안건 임베딩 검색 (원료명·심의결과 질문 시)
-    let agendaContext = '';
+    // 4. 청크 임베딩 검색 (메인 RAG 검색)
+    let chunkContext = '';
     let topMatches = [];
-    if (isAgendaQuery || (!isMemberQuery && !isRecentQuery)) {
-      let queryVector = [];
-      try { queryVector = await getEmbedding(cleanQuestion); } catch (e) {}
+    let queryVector = [];
+    try { queryVector = await getEmbedding(cleanQuestion); } catch (e) {}
 
-      const allAgendas = await prisma.committee_agendas.findMany({
-        include: { meeting: true },
+    const chunkCount = await prisma.committee_chunks.count({ where: { NOT: { embedding: null } } });
+
+    if (chunkCount > 0 && queryVector.length > 0) {
+      // 청크 DB에서 상위 후보 가져오기 (최신 500개)
+      const candidates = await prisma.committee_chunks.findMany({
+        where: { NOT: { embedding: null } },
         orderBy: { id: 'desc' },
-        take: 300,
+        take: 500,
+        select: { id: true, meetingId: true, chunkType: true, content: true, embedding: true,
+          meeting: { select: { id: true, title: true, meetingNo: true, meetingDate: true, postDate: true } } },
       });
 
-      // 쓰레기 안건 필터링: "심의위원", "위원장" 등 원료명이 아닌 항목 제외
-      const validAgendas = allAgendas.filter(item =>
-        item.ingredientName && item.ingredientName.length >= 2 &&
-        !JUNK_KEYWORDS.some(k => item.ingredientName.includes(k))
-      );
+      const scored = candidates.map(c => {
+        let score = 0;
+        try { score = cosineSimilarity(queryVector, JSON.parse(c.embedding)); } catch (e) {}
+        if (c.meeting?.meetingNo && lowerQ.includes(c.meeting.meetingNo.replace('제', '').replace('차', ''))) score += 0.3;
+        if (lowerQ.length > 2 && c.content.includes(cleanQuestion.substring(0, 6))) score += 0.2;
+        return { ...c, score };
+      }).filter(c => c.score > 0.3).sort((a, b) => b.score - a.score);
 
+      const topChunks = scored.slice(0, 6);
+      chunkContext = topChunks.map((c, i) => `[검색결과 ${i + 1}] (${c.chunkType})\n${c.content}`).join('\n\n');
+
+      // ref 데이터용: 안건 청크에서 원료명/결과 추출
+      topMatches = topChunks
+        .filter(c => c.chunkType === 'agenda')
+        .slice(0, 5)
+        .map(c => {
+          const nameMatch = c.content.match(/원료명: (.+)/);
+          const resultMatch = c.content.match(/심의 결과: (.+)/);
+          const typeMatch = c.content.match(/심의 구분: (.+)/);
+          return {
+            ingredientName: nameMatch?.[1]?.trim() || '-',
+            result: resultMatch?.[1]?.trim() || '-',
+            agendaType: typeMatch?.[1]?.trim() || '신규인정',
+            meeting: c.meeting,
+            score: c.score,
+          };
+        });
+    } else {
+      // 청크 없으면 기존 안건 검색 폴백
+      const allAgendas = await prisma.committee_agendas.findMany({
+        include: { meeting: true }, orderBy: { id: 'desc' }, take: 300,
+      });
+      const validAgendas = allAgendas.filter(item =>
+        item.ingredientName?.length >= 2 && !JUNK_KEYWORDS.some(k => item.ingredientName.includes(k))
+      );
       const scored = validAgendas.map(item => {
         let score = 0;
         if (queryVector.length > 0 && item.embedding) {
           try { score = cosineSimilarity(queryVector, JSON.parse(item.embedding)); } catch (e) {}
         }
         if (lowerQ.includes(item.ingredientName.toLowerCase())) score += 0.5;
-        if (item.result && lowerQ.includes(item.result)) score += 0.15;
-        if (item.meeting?.meetingNo && lowerQ.includes(item.meeting.meetingNo)) score += 0.3;
         return { ...item, score };
-      }).filter(i => i.score > 0.05);
-
-      scored.sort((a, b) => b.score - a.score);
+      }).filter(i => i.score > 0.05).sort((a, b) => b.score - a.score);
       topMatches = scored.slice(0, 5);
-
-      agendaContext = topMatches.map((m, idx) =>
-        `[안건 ${idx + 1}]\n` +
-        `- 원료명: ${m.ingredientName}\n` +
-        `- 심의 구분: ${m.agendaType || '신규인정'}\n` +
-        `- 심의 결과: ${m.result}\n` +
-        `- 회차: ${m.meeting?.meetingNo || '-'}\n` +
-        `- 일시: ${m.meeting?.meetingDate || m.meeting?.postDate || '-'}`
+      chunkContext = topMatches.map((m, idx) =>
+        `[안건 ${idx + 1}]\n- 원료명: ${m.ingredientName}\n- 심의 결과: ${m.result}\n- 회차: ${m.meeting?.meetingNo || '-'}`
       ).join('\n\n');
     }
 
@@ -303,7 +327,7 @@ export async function POST(req) {
       specificMeetingContext || `[최신 회의 목록]\n${latestMeetingsContext}`,
       rawContentContext ? `[관련 회의 본문]\n${rawContentContext}` : '',
       meetingEmbedContext ? `[회의록 유사도 검색결과]\n${meetingEmbedContext}` : '',
-      agendaContext ? `[심의 안건 검색결과]\n${agendaContext}` : '',
+      chunkContext ? `[심의 안건 검색결과]\n${chunkContext}` : '',
     ].filter(Boolean).join('\n\n---\n\n');
 
     const userPrompt = `[참고자료]:

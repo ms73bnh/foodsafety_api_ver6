@@ -59,6 +59,9 @@ function ManagePageInner() {
   const [rebuildStatus, setRebuildStatus] = useState(null);
   const [rebuilding, setRebuilding] = useState(false);
   const [rebuildLog, setRebuildLog] = useState([]);
+  const [chunkStatus, setChunkStatus] = useState(null);
+  const [chunking, setChunking] = useState(false);
+  const [chunkLog, setChunkLog] = useState([]);
 
   // 공지사항 관리 상태
   const [notices, setNotices] = useState([]);
@@ -266,6 +269,7 @@ function ManagePageInner() {
     } else if (activeTab === 'menu') {
       fetch('/api/menu-visibility').then(r => r.json()).then(d => setMenuConfig(d.config || [])).catch(() => {});
       fetch('/api/committee/rebuild').then(r => r.json()).then(d => setRebuildStatus(d)).catch(() => {});
+      fetch('/api/committee/chunks').then(r => r.json()).then(d => setChunkStatus(d)).catch(() => {});
     } else if (activeTab === 'notices') {
       fetchNotices();
     }
@@ -1621,6 +1625,52 @@ function ManagePageInner() {
             {rebuildLog.length > 0 && (
               <div style={{ marginTop: '14px', background: '#0f172a', borderRadius: '8px', padding: '14px', maxHeight: '200px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.73rem' }}>
                 {rebuildLog.map((line, i) => (
+                  <div key={i} style={{ marginBottom: '3px', color: line.startsWith('완료') ? '#86efac' : line.startsWith('오류') ? '#fca5a5' : '#94a3b8' }}>{line}</div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* RAG 청킹 섹션 */}
+          <div style={{ marginTop: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
+              <i className="fa-solid fa-layer-group" style={{ marginRight: '8px', color: '#7c3aed' }}></i>
+              RAG 청킹 (AI 검색 최적화)
+            </h4>
+            {chunkStatus && (
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                {[['전체 회의', chunkStatus.totalMeetings, '#0284c7'], ['청킹 완료', chunkStatus.chunkedMeetings, '#16a34a'], ['미처리', chunkStatus.pendingMeetings, '#f59e0b'], ['총 청크', chunkStatus.totalChunks, '#7c3aed'], ['임베딩 완료', chunkStatus.embeddedChunks, '#0891b2']].map(([label, val, color]) => (
+                  <div key={label} style={{ background: '#fff', border: `1px solid ${color}22`, borderRadius: '8px', padding: '8px 14px', textAlign: 'center', minWidth: '80px' }}>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color }}>{val ?? '-'}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={async () => {
+              setChunking(true);
+              setChunkLog([]);
+              let offset = 0;
+              let done = false;
+              while (!done) {
+                try {
+                  const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 'missing' }) });
+                  const data = await res.json();
+                  if (data.results) data.results.forEach(r => setChunkLog(prev => [...prev, `[${r.id}] ${r.title} → 청크:${r.chunks} 임베딩:${r.embedded}`]));
+                  done = data.done || data.processed === 0;
+                  offset = data.nextOffset || offset + 3;
+                } catch (e) { setChunkLog(prev => [...prev, `오류: ${e.message}`]); done = true; }
+              }
+              const status = await fetch('/api/committee/chunks').then(r => r.json()).catch(() => null);
+              if (status) setChunkStatus(status);
+              setChunkLog(prev => [...prev, `완료: 총 ${status?.totalChunks || '-'}개 청크`]);
+              setChunking(false);
+            }} disabled={chunking} style={{ padding: '10px 22px', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, #7c3aed, #0891b2)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: chunking ? 0.7 : 1 }}>
+              {chunking ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>청킹 진행 중...</> : <><i className="fa-solid fa-layer-group" style={{ marginRight: '6px' }}></i>누락 청킹 시작</>}
+            </button>
+            {chunkLog.length > 0 && (
+              <div style={{ marginTop: '14px', background: '#0f172a', borderRadius: '8px', padding: '14px', maxHeight: '200px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.73rem' }}>
+                {chunkLog.map((line, i) => (
                   <div key={i} style={{ marginBottom: '3px', color: line.startsWith('완료') ? '#86efac' : line.startsWith('오류') ? '#fca5a5' : '#94a3b8' }}>{line}</div>
                 ))}
               </div>

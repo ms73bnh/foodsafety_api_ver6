@@ -335,6 +335,7 @@ model committee_meetings {
   updatedAt        DateTime            @updatedAt
 
   agendas      committee_agendas[]
+  chunks       committee_chunks[]
 }
 
 // 시스템 설정 키-값 저장소
@@ -344,6 +345,23 @@ model system_settings {
   value     String   @db.Text
   updatedBy String?
   updatedAt DateTime @updatedAt
+}
+
+// 회의록 청크 테이블 - RAG용 세분화된 임베딩
+model committee_chunks {
+  id          Int                @id @default(autoincrement())
+  meetingId   Int
+  meeting     committee_meetings @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  chunkType   String             // 'agenda' | 'pdf' | 'body'
+  content     String             @db.Text  // 청크 텍스트 (검색 대상)
+  embedding   String?            @db.Text  // JSON 벡터
+  orderIndex  Int                @default(0)
+
+  createdAt   DateTime           @default(now())
+
+  @@index([meetingId])
+  @@index([chunkType])
 }
 
 model committee_agendas {
