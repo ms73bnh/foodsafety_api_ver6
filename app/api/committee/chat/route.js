@@ -154,6 +154,8 @@ export async function POST(req) {
 좋은 예시: "**저분자콜라겐펩타이드**는 제174차 회의(2019.12.13)에서 기능성 추가 및 섭취량 변경 건으로 심의되어 **인정** 결정을 받았습니다."`;
     }
 
+    const JUNK_KEYWORDS = ['심의위원', '위원장', '참석자', '기타사항', '일시', '장소'];
+
     // 1. 질문 의도 분류
     const isRecentQuery = /최근|최신|마지막|새로운|방금|요즘|가장 최근|최근에|최신|최근 등록|최근 게시/.test(lowerQ);
     const isMemberQuery = /위원|명단|위원장|참석|구성원|멤버|임기/.test(lowerQ);
@@ -247,7 +249,13 @@ export async function POST(req) {
         take: 300,
       });
 
-      const scored = allAgendas.map(item => {
+      // 쓰레기 안건 필터링: "심의위원", "위원장" 등 원료명이 아닌 항목 제외
+      const validAgendas = allAgendas.filter(item =>
+        item.ingredientName && item.ingredientName.length >= 2 &&
+        !JUNK_KEYWORDS.some(k => item.ingredientName.includes(k))
+      );
+
+      const scored = validAgendas.map(item => {
         let score = 0;
         if (queryVector.length > 0 && item.embedding) {
           try { score = cosineSimilarity(queryVector, JSON.parse(item.embedding)); } catch (e) {}
@@ -272,12 +280,22 @@ export async function POST(req) {
     }
 
     // 5. 컨텍스트 조합
+    // specificMeeting이 있으면 그 회의 안건을 topMatches로 덮어써서 ref 섹션에 표시
+    if (specificMeeting && specificMeeting.agendas.length > 0) {
+      topMatches = specificMeeting.agendas
+        .filter(a => !JUNK_KEYWORDS.some(k => a.ingredientName?.includes(k)))
+        .slice(0, 5)
+        .map(a => ({ ...a, meeting: specificMeeting, score: 1 }));
+    }
+
     const specificMeetingContext = specificMeeting
       ? `[특정 회의 직접 조회]\n` +
         `제목: ${specificMeeting.title}\n` +
         `회차: ${specificMeeting.meetingNo || '-'} | 일시: ${specificMeeting.meetingDate || specificMeeting.postDate || '-'}\n` +
         (specificMeeting.agendas.length
-          ? `심의 안건 및 결과:\n${specificMeeting.agendas.map(a => `  - ${a.ingredientName} (${a.agendaType || '신규인정'}): ${a.result}`).join('\n')}`
+          ? `심의 안건 및 결과:\n${specificMeeting.agendas
+              .filter(a => !JUNK_KEYWORDS.some(k => a.ingredientName?.includes(k)))
+              .map(a => `  - ${a.ingredientName} (${a.agendaType || '신규인정'}): ${a.result}`).join('\n')}`
           : '안건 데이터 없음')
       : '';
 
