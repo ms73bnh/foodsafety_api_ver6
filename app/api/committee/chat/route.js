@@ -250,7 +250,12 @@ export async function POST(req) {
       topMatches = scored.slice(0, 5);
 
       agendaContext = topMatches.map((m, idx) =>
-        `[안건 ${idx + 1}] ${m.meeting?.meetingNo || ''} ${m.meeting?.meetingDate || ''}\n원료: ${m.ingredientName} (${m.agendaType || '신규인정'}) → **${m.result}**\n원문: ${m.rawName}`
+        `[안건 ${idx + 1}]\n` +
+        `- 원료명: ${m.ingredientName}\n` +
+        `- 심의 구분: ${m.agendaType || '신규인정'}\n` +
+        `- 심의 결과: ${m.result}\n` +
+        `- 회차: ${m.meeting?.meetingNo || '-'}\n` +
+        `- 일시: ${m.meeting?.meetingDate || m.meeting?.postDate || '-'}`
       ).join('\n\n');
     }
 
