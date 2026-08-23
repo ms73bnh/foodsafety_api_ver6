@@ -50,7 +50,10 @@ export async function GET(req, { params }) {
       ext = 'hwp';
     }
 
-    const baseName = (meeting.pdfFileName || meeting.title || `meeting_${id}`)
+    const rawName = meeting.pdfFileName && meeting.pdfFileName !== '첨부파일.pdf'
+      ? meeting.pdfFileName
+      : (meeting.title || `meeting_${id}`);
+    const baseName = rawName
       .replace(/[/\\?%*:|"<>]/g, '_')
       .replace(/\.(pdf|hwp|hwpx)$/i, '');
     const filename = `${baseName}.${ext}`;

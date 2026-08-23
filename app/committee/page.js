@@ -1571,6 +1571,54 @@ export default function CommitteePage() {
         </div>
       )}
 
+      {/* PDF 미리보기 모달 */}
+      {previewPdf && (
+        <div
+          onClick={() => setPreviewPdf(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#fff", borderRadius: 12, width: "100%", maxWidth: 900, height: "90vh",
+              display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.4)"
+            }}
+          >
+            {/* 모달 헤더 */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
+              <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#0f172a", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <i className="fa-solid fa-file-pdf" style={{ color: "#dc2626", marginRight: 6 }} />
+                {previewPdf.title}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginLeft: 12, flexShrink: 0 }}>
+                <a
+                  href={`/api/committee/pdf/${previewPdf.id}?download=true`}
+                  download
+                  style={{ padding: "5px 10px", background: "#0284c7", color: "#fff", borderRadius: 6, fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}
+                >
+                  <i className="fa-solid fa-download" /> 다운로드
+                </a>
+                <button
+                  onClick={() => setPreviewPdf(null)}
+                  style={{ padding: "5px 10px", background: "#f1f5f9", color: "#64748b", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
+                >
+                  <i className="fa-solid fa-xmark" /> 닫기
+                </button>
+              </div>
+            </div>
+            {/* iframe으로 PDF 렌더링 */}
+            <iframe
+              src={`/api/committee/pdf/${previewPdf.id}`}
+              style={{ flex: 1, border: "none", width: "100%" }}
+              title={previewPdf.title}
+            />
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
