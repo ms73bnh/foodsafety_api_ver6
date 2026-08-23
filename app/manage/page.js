@@ -1680,7 +1680,8 @@ function ManagePageInner() {
                     const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 're-embed' }) });
                     const data = await res.json();
                     totalEmbedded += data.embedded || 0;
-                    setChunkLog(prev => [...prev, `임베딩 완료 +${data.embedded || 0}개 (남은 누락: ${data.remaining ?? '-'}개)`]);
+                    const errInfo = data.errors?.length ? ` ⚠️ ${data.errors[0]}` : '';
+                    setChunkLog(prev => [...prev, `임베딩 완료 +${data.embedded || 0}개 (남은 누락: ${data.remaining ?? '-'}개)${errInfo}`]);
                     done = data.done || data.processed === 0;
                     offset = data.nextOffset || offset + 15;
                   } catch (e) { setChunkLog(prev => [...prev, `오류: ${e.message}`]); done = true; }

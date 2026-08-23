@@ -51,26 +51,30 @@ export async function POST(req) {
     if (chunks.length === 0) return NextResponse.json({ done: true, processed: 0 });
 
     let embedded = 0;
+    const errors = [];
     for (const chunk of chunks) {
+      let vec = [];
+      let errMsg = null;
       try {
-        const vec = await getEmbedding(chunk.content);
-        if (vec?.length > 0) {
-          await prisma.committee_chunks.update({
-            where: { id: chunk.id },
-            data: { embedding: JSON.stringify(vec) },
-          });
-          embedded++;
-        }
-        // Rate limit 방지: 임베딩 성공 후 300ms 대기
-        await new Promise(r => setTimeout(r, 300));
+        const { GoogleGenAI } = await import('@google/genai');
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const result = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: chunk.content.substring(0, 2048) });
+        vec = result.embeddings?.[0]?.values || [];
       } catch (e) {
-        // Rate limit이면 1초 대기 후 계속
-        await new Promise(r => setTimeout(r, 1000));
+        errMsg = e.message?.substring(0, 100);
+        errors.push(errMsg);
+      }
+      if (vec.length > 0) {
+        await prisma.committee_chunks.update({ where: { id: chunk.id }, data: { embedding: JSON.stringify(vec) } });
+        embedded++;
+        await new Promise(r => setTimeout(r, 500));
+      } else {
+        await new Promise(r => setTimeout(r, errMsg ? 2000 : 500));
       }
     }
 
     const remaining = await prisma.committee_chunks.count({ where: { embedding: null } });
-    return NextResponse.json({ done: chunks.length < batchSize * 5, processed: chunks.length, embedded, remaining, nextOffset: offset + chunks.length });
+    return NextResponse.json({ done: chunks.length < batchSize * 2, processed: chunks.length, embedded, remaining, nextOffset: offset + chunks.length, errors: errors.slice(0, 3) });
   }
 
   const where = mode === 'all' ? {} : { chunks: { none: {} } };
