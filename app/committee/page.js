@@ -167,6 +167,14 @@ export default function CommitteePage() {
   const cooldownRef = useRef(null);
   const chatEndRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const updateViewport = () => setIsMobile(window.innerWidth < 900);
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
 
   // ESC 키로 모달 닫기
   useEffect(() => {
@@ -515,7 +523,7 @@ export default function CommitteePage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1440, margin: "0 auto", padding: "32px 24px 60px" }}>
+    <div style={{ maxWidth: 1440, margin: "0 auto", padding: isMobile ? "16px 12px 40px" : "32px 24px 60px" }}>
       {/* ── 헤더 ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 16 }}>
         <div>
@@ -553,7 +561,7 @@ export default function CommitteePage() {
       </div>
 
       {/* ── KPI 통계 카드 (클릭하여 해당 목록 바로보기) ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fit, minmax(180px, 1fr))", gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {kpiCards.map((kpi) => (
           <div
             key={kpi.key}
@@ -600,17 +608,17 @@ export default function CommitteePage() {
       {/* ── 메인 레이아웃 (좌측: AI 챗봇 / 우측: 회의 게시물 & 안건 탭) ── */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: isWideLayout ? "1fr" : "1.02fr 1.38fr",
-        gap: 24,
+        gridTemplateColumns: isMobile || isWideLayout ? "1fr" : "1.02fr 1.38fr",
+        gap: isMobile ? 14 : 24,
         alignItems: "start",
         transition: "all 0.3s ease"
       }}>
         
         {/* 🤖 1. AI 심의 도우미 Q&A 챗봇 (와이드 모드 시 접힘) */}
         {!isWideLayout && (
-          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", height: "860px", overflow: "hidden" }}>
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", height: isMobile ? "calc(100vh - 120px)" : "860px", minHeight: isMobile ? 540 : 0, overflow: "hidden" }}>
             {/* 챗봇 헤더 */}
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid #e2e8f0", background: "linear-gradient(135deg, #0f172a, #1e293b)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ padding: isMobile ? "14px 14px" : "16px 20px", borderBottom: "1px solid #e2e8f0", background: "linear-gradient(135deg, #0f172a, #1e293b)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: 10, flexWrap: isMobile ? "wrap" : "nowrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <i className="fa-solid fa-robot" style={{ color: "#38bdf8", fontSize: "1.1rem" }} />
                 <div>
@@ -639,7 +647,7 @@ export default function CommitteePage() {
               {messages.map((msg, i) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
                   <div style={{
-                    maxWidth: "92%",
+                    maxWidth: msg.role === "user" ? (isMobile ? "88%" : "92%") : "100%",
                     padding: "12px 16px",
                     borderRadius: 12,
                     fontSize: "0.85rem",
@@ -658,14 +666,14 @@ export default function CommitteePage() {
 
                   {/* 인용된 회의록 참고자료 카드 */}
                   {msg.references && msg.references.length > 0 && (
-                    <div style={{ width: "95%", marginTop: 8, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 10, padding: "10px 14px", fontSize: "0.78rem" }}>
+                    <div style={{ width: "100%", marginTop: 8, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 10, padding: "10px 14px", fontSize: "0.78rem" }}>
                       <div style={{ fontWeight: 800, color: "#0284c7", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
                         <i className="fa-solid fa-book-bookmark" /> 답변 근거 회의록 자료:
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {msg.references.slice(0, 3).map((ref, rIdx) => (
-                          <div key={rIdx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", padding: "6px 10px", borderRadius: 6, border: "1px solid #f1f5f9" }}>
-                            <div>
+                        {msg.references.map((ref, rIdx) => (
+                          <div key={rIdx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", background: "#f8fafc", padding: "6px 10px", borderRadius: 6, border: "1px solid #f1f5f9" }}>
+                            <div style={{ minWidth: 0 }}>
                               <strong style={{ color: "#0f172a" }}>{ref.ingredientName}</strong>
                               <span style={{ marginLeft: 6, color: "#64748b" }}>({ref.meetingNo || ref.meetingDate})</span>
                             </div>
@@ -783,7 +791,7 @@ export default function CommitteePage() {
                   )}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexDirection: isMobile ? "column" : "row" }}>
                 <input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
@@ -800,7 +808,7 @@ export default function CommitteePage() {
                     background: chatLoading || !chatInput.trim() || (!isAdmin && (cooldown > 0 || remaining === 0)) ? "#94a3b8" : "#0284c7",
                     color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem",
                     cursor: chatLoading || !chatInput.trim() || (!isAdmin && (cooldown > 0 || remaining === 0)) ? "not-allowed" : "pointer",
-                    display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap"
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto"
                   }}
                 >
                   {chatLoading ? <i className="fa-solid fa-spinner fa-spin" /> : cooldown > 0 && !isAdmin ? <i className="fa-solid fa-clock" /> : <i className="fa-solid fa-paper-plane" />}
@@ -812,7 +820,7 @@ export default function CommitteePage() {
         )}
 
         {/* 📋 2. 우측 탭 전환 영역 (회의 게시물 뷰 vs 안건별 결과 뷰) */}
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", padding: "20px 20px 10px", minHeight: "860px", display: "flex", flexDirection: "column" }}>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", padding: isMobile ? "14px 12px 10px" : "20px 20px 10px", minHeight: isMobile ? "auto" : "860px", display: "flex", flexDirection: "column" }}>
           
           {/* 상단 탭 헤더 & 도구 버튼 */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #f1f5f9", paddingBottom: 14, marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
@@ -1239,8 +1247,8 @@ export default function CommitteePage() {
               </div>
 
               {/* 안건 목록 테이블 */}
-              <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", flex: 1, maxHeight: "620px", overflowY: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflowX: "auto", flex: 1, maxHeight: "620px", overflowY: "auto" }}>
+                <table style={{ width: "100%", minWidth: isMobile ? 620 : 0, borderCollapse: "collapse", fontSize: "0.8rem" }}>
                   <thead>
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", position: "sticky", top: 0, zIndex: 5 }}>
                       {/* 회차/일시 정렬 가능 헤더 */}
