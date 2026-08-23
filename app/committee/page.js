@@ -10,6 +10,39 @@ const QUICK_QUESTIONS = [
   "최근 '기능성 추가'로 인정받은 개별인정형 원료들은 무엇이 있어?",
 ];
 
+const decodeTextEntities = (value) => String(value ?? "")
+  .replace(/&amp;/gi, "&")
+  .replace(/&middot;|&bull;|&#183;|&#x00b7;/gi, "·")
+  .replace(/&nbsp;|&#160;/gi, " ")
+  .replace(/&lt;/gi, "<")
+  .replace(/&gt;/gi, ">")
+  .replace(/&quot;/gi, '"')
+  .replace(/&#39;|&apos;/gi, "'");
+
+const cleanCommitteeText = (value) => decodeTextEntities(value)
+  .replace(/\)\s*·\s*/g, ") ")
+  .replace(/^\s*[·ㆍ•]\s*/g, "")
+  .replace(/\s*[·ㆍ•]\s*$/g, "")
+  .replace(/\s+/g, " ")
+  .trim();
+
+const oneLineClampStyle = {
+  display: "block",
+  maxWidth: "100%",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const twoLineClampStyle = {
+  display: "-webkit-box",
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+  wordBreak: "keep-all",
+  overflowWrap: "anywhere",
+};
+
 // ── 공통 중앙 페이지네이션 컴포넌트 (1, 2, 3... 번호형) ──
 function CenteredPagination({ current, totalPages, onChange }) {
   if (totalPages <= 1) return null;
@@ -724,6 +757,9 @@ export default function CommitteePage() {
                 </button>
                 {showPromptEditor && (
                   <div style={{ padding: "0 14px 14px" }}>
+                    <div style={{ fontSize: "0.74rem", color: "#64748b", lineHeight: 1.5, marginBottom: 8 }}>
+                      기본 시스템 프롬프트는 항상 먼저 적용되고, 여기에 저장한 내용은 관리자 추가 지시로 함께 적용됩니다. 기본값 초기화를 누르면 코드에 내장된 최신 기본 프롬프트와 다시 일치합니다.
+                    </div>
                     <textarea
                       value={systemPrompt}
                       onChange={e => { setSystemPrompt(e.target.value); setPromptMsg(""); }}
@@ -1301,7 +1337,12 @@ export default function CommitteePage() {
                     ) : agendas.length === 0 ? (
                       <tr><td colSpan={4} style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>등록된 안건 데이터가 없습니다.</td></tr>
                     ) : (
-                      agendas.map((ag) => (
+                      agendas.map((ag) => {
+                        const ingredientName = cleanCommitteeText(ag.ingredientName);
+                        const rawName = cleanCommitteeText(ag.rawName);
+                        const agendaType = cleanCommitteeText(ag.agendaType);
+
+                        return (
                         <tr key={ag.id} style={{ borderBottom: "1px solid #f1f5f9" }}
                           onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
                           onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
@@ -1310,16 +1351,16 @@ export default function CommitteePage() {
                             <div style={{ color: "#94a3b8", fontSize: "0.7rem" }}>{ag.meeting?.meetingDate || ag.meeting?.postDate || "-"}</div>
                           </td>
                           <td style={{ padding: "10px 12px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                              <strong style={{ color: "#0f172a", fontSize: "0.85rem" }}>{ag.ingredientName}</strong>
-                              {ag.agendaType && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, minWidth: 0 }}>
+                              <strong title={ingredientName} style={{ color: "#0f172a", fontSize: "0.85rem", minWidth: 0, ...oneLineClampStyle }}>{ingredientName || "-"}</strong>
+                              {agendaType && (
                                 <span style={{ background: "#f1f5f9", color: "#475569", padding: "1px 6px", borderRadius: 4, fontSize: "0.68rem", fontWeight: 600 }}>
-                                  {ag.agendaType}
+                                  {agendaType}
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: 1.4 }}>
-                              {ag.rawName}
+                            <div title={rawName} style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: 1.4, ...twoLineClampStyle }}>
+                              {rawName}
                             </div>
                           </td>
                           <td style={{ padding: "10px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
@@ -1356,7 +1397,8 @@ export default function CommitteePage() {
                             </div>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1505,7 +1547,12 @@ export default function CommitteePage() {
                   ) : agendas.length === 0 ? (
                     <tr><td colSpan={4} style={{ textAlign: "center", padding: 60, color: "#94a3b8" }}>등록된 안건 데이터가 없습니다.</td></tr>
                   ) : (
-                    agendas.map((ag) => (
+                    agendas.map((ag) => {
+                      const ingredientName = cleanCommitteeText(ag.ingredientName);
+                      const rawName = cleanCommitteeText(ag.rawName);
+                      const agendaType = cleanCommitteeText(ag.agendaType);
+
+                      return (
                       <tr key={ag.id} style={{ borderBottom: "1px solid #e2e8f0" }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
@@ -1514,16 +1561,16 @@ export default function CommitteePage() {
                           <div style={{ color: "#64748b", marginTop: 2 }}>{ag.meeting?.meetingDate || ag.meeting?.postDate || "-"}</div>
                         </td>
                         <td style={{ padding: "12px 16px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                            <strong style={{ color: "#0f172a", fontSize: "0.95rem" }}>{ag.ingredientName}</strong>
-                            {ag.agendaType && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, minWidth: 0 }}>
+                            <strong title={ingredientName} style={{ color: "#0f172a", fontSize: "0.95rem", minWidth: 0, ...oneLineClampStyle }}>{ingredientName || "-"}</strong>
+                            {agendaType && (
                               <span style={{ background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: 4, fontSize: "0.72rem", fontWeight: 700 }}>
-                                {ag.agendaType}
+                                {agendaType}
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: "0.8rem", color: "#475569", lineHeight: 1.5 }}>
-                            {ag.rawName}
+                          <div title={rawName} style={{ fontSize: "0.8rem", color: "#475569", lineHeight: 1.5, ...twoLineClampStyle }}>
+                            {rawName}
                           </div>
                         </td>
                         <td style={{ padding: "12px 16px", textAlign: "center", whiteSpace: "nowrap" }}>
@@ -1558,7 +1605,8 @@ export default function CommitteePage() {
                           </div>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>

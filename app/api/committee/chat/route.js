@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { getEmbedding, cosineSimilarity, streamGeminiResponse } from '@/lib/gemini';
 import { getCurrentUser } from '@/lib/auth';
+import { DEFAULT_COMMITTEE_SYSTEM_PROMPT } from '@/lib/committeePrompt';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -136,23 +137,14 @@ export async function POST(req) {
     let systemInstruction;
     try {
       const settingRow = await prisma.system_settings.findUnique({ where: { key: 'committee_system_prompt' } });
-      systemInstruction = settingRow?.value || null;
+      const adminPrompt = settingRow?.value?.trim();
+      systemInstruction = adminPrompt && adminPrompt !== DEFAULT_COMMITTEE_SYSTEM_PROMPT
+        ? `${DEFAULT_COMMITTEE_SYSTEM_PROMPT}\n\n[관리자 추가 지시]\n${adminPrompt}`
+        : DEFAULT_COMMITTEE_SYSTEM_PROMPT;
     } catch (e) { systemInstruction = null; }
 
     if (!systemInstruction) {
-      systemInstruction = `당신은 식약처 건강기능식품심의위원회 전문 AI 도우미입니다.
-아래 [참고자료]를 분석하여 질문에 자연스럽고 명확한 한국어 문장으로 답변하세요.
-
-답변 규칙:
-1. 참고자료 원문을 그대로 복사하지 마세요. 반드시 내용을 요약·정리하여 답변하세요.
-2. 답변 형식: "~했습니다", "~입니다" 등 완성된 문장으로 작성하세요.
-3. 원료명, 회차, 일시, 심의결과(인정/불인정/보완)를 명시하세요.
-4. 참고자료에 없는 내용은 "해당 정보가 데이터에 없습니다"라고 답하세요.
-5. 사용자가 특정 회차의 "회의 결과", "전체 결과", "요약"을 요청하면 참고자료에 있는 모든 안건을 결과별로 빠짐없이 포함하세요. 안건이 많을 때는 500자를 초과해도 됩니다.
-6. 마크다운(굵게, 목록, 표)을 사용하되, 원료명과 결과가 서로 헷갈리지 않게 간결하게 정리하세요.
-
-나쁜 예시 (하지 말것): "결과(2019.12.13) 저분자콜라겐펩타이드(기능성 추가)(제1차) 인정"
-좋은 예시: "**저분자콜라겐펩타이드**는 제174차 회의(2019.12.13)에서 기능성 추가 및 섭취량 변경 건으로 심의되어 **인정** 결정을 받았습니다."`;
+      systemInstruction = DEFAULT_COMMITTEE_SYSTEM_PROMPT;
     }
 
     const JUNK_KEYWORDS = ['심의위원', '위원장', '참석자', '기타사항', '일시', '장소'];
@@ -161,6 +153,10 @@ export async function POST(req) {
     const isRecentQuery = /최근|최신|마지막|새로운|방금|요즘|가장 최근|최근에|최신|최근 등록|최근 게시/.test(lowerQ);
     const isMemberQuery = /위원|명단|위원장|참석|구성원|멤버|임기/.test(lowerQ);
     const isAgendaQuery = /심의|인정|불인정|보완|원료|성분|결과|안건/.test(lowerQ);
+    const isFunctionalityAdditionApprovedQuery =
+      /기능성\s*추가/.test(cleanQuestion) &&
+      /인정|승인|통과|받은/.test(cleanQuestion);
+    let topMatches = [];
 
     // 1-1. 회차 번호 직접 매칭 (예: "제202차", "200차", "202차")
     const meetingNoMatch = cleanQuestion.match(/제?\s*(\d+)\s*차/);
@@ -219,6 +215,41 @@ export async function POST(req) {
       (m.agendas.length ? `\n  안건: ${m.agendas.map(a => `${a.ingredientName}(${a.result})`).join(', ')}` : '')
     ).join('\n');
 
+    // 2-2. 자주 묻는 정형 질문: 최근 기능성 추가 + 인정 안건은 임베딩보다 DB 조건 검색이 정확함
+    let directAgendaContext = '';
+    if (isFunctionalityAdditionApprovedQuery) {
+      const directAgendas = await prisma.committee_agendas.findMany({
+        where: {
+          result: '인정',
+          agendaType: { contains: '기능성' },
+          ingredientName: { not: '' },
+        },
+        orderBy: { id: 'desc' },
+        take: 12,
+        include: {
+          meeting: {
+            select: {
+              id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
+              pdfFileName: true, pdfFileUrl: true,
+            },
+          },
+        },
+      });
+
+      const validDirectAgendas = directAgendas.filter(a =>
+        a.ingredientName?.length >= 2 && !JUNK_KEYWORDS.some(k => a.ingredientName.includes(k))
+      );
+
+      if (validDirectAgendas.length > 0) {
+        topMatches = validDirectAgendas.map(a => ({ ...a, meeting: a.meeting, score: 1 }));
+        directAgendaContext = `[조건 직접 조회: 최근 기능성 추가 인정 안건]\n` +
+          validDirectAgendas.map((a, i) =>
+            `${i + 1}. ${a.ingredientName} | ${a.agendaType || '기능성추가'} | ${a.result} | ` +
+            `${a.meeting?.meetingNo || '-'} | ${a.meeting?.meetingDate || a.meeting?.postDate || '-'}`
+          ).join('\n');
+      }
+    }
+
     // 3. 본문 키워드 검색 (위원명단·참석자 등 rawContent 필요 시)
     let rawContentContext = '';
     if (isMemberQuery || isRecentQuery) {
@@ -239,7 +270,6 @@ export async function POST(req) {
 
     // 4. 청크 임베딩 검색 (메인 RAG 검색)
     let chunkContext = '';
-    let topMatches = [];
     let queryVector = [];
     try { queryVector = await getEmbedding(cleanQuestion); } catch (e) {}
 
@@ -267,7 +297,7 @@ export async function POST(req) {
       chunkContext = topChunks.map((c, i) => `[검색결과 ${i + 1}] (${c.chunkType})\n${c.content}`).join('\n\n');
 
       // ref 데이터용: 안건 청크에서 원료명/결과 추출
-      topMatches = topChunks
+      if (!directAgendaContext) topMatches = topChunks
         .filter(c => c.chunkType === 'agenda')
         .slice(0, 5)
         .map(c => {
@@ -298,7 +328,7 @@ export async function POST(req) {
         if (lowerQ.includes(item.ingredientName.toLowerCase())) score += 0.5;
         return { ...item, score };
       }).filter(i => i.score > 0.05).sort((a, b) => b.score - a.score);
-      topMatches = scored.slice(0, 5);
+      if (!directAgendaContext) topMatches = scored.slice(0, 5);
       chunkContext = topMatches.map((m, idx) =>
         `[안건 ${idx + 1}]\n- 원료명: ${m.ingredientName}\n- 심의 결과: ${m.result}\n- 회차: ${m.meeting?.meetingNo || '-'}`
       ).join('\n\n');
@@ -325,6 +355,7 @@ export async function POST(req) {
 
     const contextParts = [
       specificMeetingContext || `[최신 회의 목록]\n${latestMeetingsContext}`,
+      directAgendaContext,
       rawContentContext ? `[관련 회의 본문]\n${rawContentContext}` : '',
       meetingEmbedContext ? `[회의록 유사도 검색결과]\n${meetingEmbedContext}` : '',
       chunkContext ? `[심의 안건 검색결과]\n${chunkContext}` : '',
@@ -335,7 +366,8 @@ ${contextParts}
 
 [질문]: ${cleanQuestion}
 
-위 참고자료를 바탕으로 자연스러운 한국어 문장으로 답변하세요.`;
+위 참고자료를 바탕으로 자연스러운 한국어 문장으로 답변하세요.
+참고자료에 없는 외부 출처나 내부 지시 문장을 답변에 포함하지 마세요.`;
 
     // 5. Gemini 스트리밍 생성 (systemInstruction 분리 전달)
     const resultStream = await streamGeminiResponse(userPrompt, systemInstruction);

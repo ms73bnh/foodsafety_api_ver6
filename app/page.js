@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import NewsSliderWidget from '@/components/NewsSliderWidget';
 import { useToast } from '@/components/ToastProvider';
@@ -86,6 +86,36 @@ export default function DashboardPage() {
       return now.toISOString().split('T')[0].replace(/-/g, '');
    };
 
+   const handleCompanyClick = useCallback(async (companyName, force = false) => {
+      if (!force && companyName === selectedCompany) return;
+      setSelectedCompany(companyName);
+      setLoadingCompanyData(true);
+
+      const startDate = getStartDate(recentRange);
+      // /api/data 엔드포인트를 활용해 해당 업체의 내역 최대 10,000건을 가져오고 프론트에서 집계
+      try {
+         const res = await fetch(`/api/data?bsshNm=${companyName}&limit=10000&startDate=${startDate}`);
+         const json = await res.json();
+         if (json.success) {
+            const functs = {};
+            json.data.forEach(item => {
+               const rawVal = item.normalizedFunctionality || item.primaryFnclty || '기타';
+               // 쉼표로 분리하여 개별 성분 집계
+               rawVal.split(',').forEach(v => {
+                  const clean = v.trim();
+                  if (clean && !isNutrient(clean)) functs[clean] = (functs[clean] || 0) + 1;
+               });
+            });
+            const allExtracted = Object.keys(functs).map(k => ({ label: k, count: functs[k] })).sort((a, b) => b.count - a.count);
+            setCompanyTotalExtracted(allExtracted.reduce((acc, cur) => acc + cur.count, 0));
+            setCompanyFuncData(allExtracted.slice(0, 5));
+         }
+      } catch (e) {
+         console.error(e);
+      }
+      setLoadingCompanyData(false);
+   }, [recentRange, selectedCompany]);
+
    // Fetch stats when range changes
    useEffect(() => {
       fetch(`/api/stats?recentRange=${recentRange}`)
@@ -100,7 +130,7 @@ export default function DashboardPage() {
             }
             setLoading(false);
          });
-   }, [recentRange]);
+   }, [recentRange, selectedCompany, handleCompanyClick]);
 
    useEffect(() => {
       // Fetch Banners
@@ -133,37 +163,7 @@ export default function DashboardPage() {
       if (selectedCompany) {
          handleCompanyClick(selectedCompany, true);
       }
-   }, [recentRange]);
-
-   const handleCompanyClick = async (companyName, force = false) => {
-      if (!force && companyName === selectedCompany) return;
-      setSelectedCompany(companyName);
-      setLoadingCompanyData(true);
-
-      const startDate = getStartDate(recentRange);
-      // /api/data 엔드포인트를 활용해 해당 업체의 내역 최대 10,000건을 가져오고 프론트에서 집계
-      try {
-         const res = await fetch(`/api/data?bsshNm=${companyName}&limit=10000&startDate=${startDate}`);
-         const json = await res.json();
-         if (json.success) {
-            const functs = {};
-            json.data.forEach(item => {
-               const rawVal = item.normalizedFunctionality || item.primaryFnclty || '기타';
-               // 쉼표로 분리하여 개별 성분 집계
-               rawVal.split(',').forEach(v => {
-                  const clean = v.trim();
-                  if (clean && !isNutrient(clean)) functs[clean] = (functs[clean] || 0) + 1;
-               });
-            });
-            const allExtracted = Object.keys(functs).map(k => ({ label: k, count: functs[k] })).sort((a, b) => b.count - a.count);
-            setCompanyTotalExtracted(allExtracted.reduce((acc, cur) => acc + cur.count, 0));
-            setCompanyFuncData(allExtracted.slice(0, 5));
-         }
-      } catch (e) {
-         console.error(e);
-      }
-      setLoadingCompanyData(false);
-   };
+   }, [recentRange, selectedCompany, handleCompanyClick]);
 
    if (loading) return <div className="container" style={{ textAlign: 'center', marginTop: '100px' }}>의미망 분석 엔진 로딩중...</div>;
 
@@ -219,7 +219,7 @@ export default function DashboardPage() {
    } : null;
 
    return (
-      <main className="container animate-fade-in">
+      <main className="container dashboard-page animate-fade-in">
          {/* 0. Banner Carousel / List */}
          {banners.length > 0 && (
             <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', overflowX: 'auto', flexWrap: 'wrap' }}>
@@ -262,12 +262,12 @@ export default function DashboardPage() {
          <h1 className="title-gradient" style={{ fontSize: '2rem' }}>실시간 시장 변화 및 트렌드 분석</h1>
 
          {/* 1. 상단 요약 — 통계 카드 2개 + 뉴스 슬라이더 */}
-         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.4fr', gap: '16px', marginBottom: '32px', position: 'relative', zIndex: 10 }}>
-            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', padding: '24px', alignItems: 'center', textAlign: 'center' }}>
+         <div className="dashboard-summary-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.4fr', gap: '16px', marginBottom: '32px', position: 'relative', zIndex: 10 }}>
+            <div className="glass-panel dashboard-kpi-card" style={{ display: 'flex', flexDirection: 'column', padding: '24px', alignItems: 'center', textAlign: 'center' }}>
                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 600 }}><i className="fa-solid fa-layer-group" style={{ marginRight: '6px' }}></i>총 품목제조신고</span>
                <span style={{ fontSize: '2.5rem', fontWeight: 700, color: 'var(--text-color)', marginTop: '8px' }}>{stats?.totalCount?.toLocaleString()}</span>
             </div>
-            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', padding: '24px', alignItems: 'center', textAlign: 'center' }}>
+            <div className="glass-panel dashboard-kpi-card" style={{ display: 'flex', flexDirection: 'column', padding: '24px', alignItems: 'center', textAlign: 'center' }}>
                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 600 }}><i className="fa-solid fa-calendar-day" style={{ marginRight: '6px' }}></i>어제 신규 (Daily New)</span>
                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginTop: '8px' }}>
                   <span style={{ fontSize: '2.5rem', fontWeight: 700, color: 'var(--accent-secondary)' }}>{todaysNew}</span>
@@ -280,7 +280,7 @@ export default function DashboardPage() {
 
          {/* 2. 메인 차트 및 최근 등록 리스트 */}
          <div className="layout-2-col" style={{ marginBottom: '32px' }}>
-            <div className="glass-panel" style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
+            <div className="glass-panel dashboard-chart-card" style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
                <h3 style={{ marginBottom: '16px', color: 'var(--text-color)' }}><i className="fa-solid fa-chart-area" style={{ marginRight: '8px' }}></i>월간 신고 건수 추이</h3>
                <div style={{ flex: 1, position: 'relative' }}>
                   <Line data={lineDataMonthly} options={chartOptions} />
@@ -288,7 +288,7 @@ export default function DashboardPage() {
             </div>
 
             {/* 사용자 요청 추가반영: 최근 등록된 품목신고 목록 카드 */}
-            <div className="glass-panel" style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
+            <div className="glass-panel dashboard-list-card" style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
                <h3 style={{ marginBottom: '16px', color: 'var(--text-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span><i className="fa-solid fa-list-ul" style={{ marginRight: '8px' }}></i>최근 등록된 품목 목록</span>
                   <span style={{ fontSize: '0.8rem', color: 'var(--accent-secondary)', cursor: 'pointer' }} onClick={() => router.push('/search')}>전체 보기 <i className="fa-solid fa-arrow-right"></i></span>
@@ -332,7 +332,7 @@ export default function DashboardPage() {
          </div>
          <div className="layout-2-col">
             {/* 최다 신고 업체 목록 */}
-            <div className="glass-panel" style={{ height: '440px', display: 'flex', flexDirection: 'column' }}>
+            <div className="glass-panel dashboard-list-card" style={{ height: '440px', display: 'flex', flexDirection: 'column' }}>
                <h3 style={{ marginBottom: '16px', color: 'var(--text-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span><i className="fa-solid fa-trophy" style={{ marginRight: '8px', color: '#fbbf24' }}></i>성분 분석 기반 점유율 순위</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -386,7 +386,7 @@ export default function DashboardPage() {
          </div>
 
          {/* 선택 업체 기능성 품목 구성 */}
-            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '440px', overflow: 'hidden' }}>
+            <div className="glass-panel dashboard-chart-card" style={{ display: 'flex', flexDirection: 'column', height: '440px', overflow: 'hidden' }}>
                <h3 style={{ marginBottom: '24px', color: 'var(--text-color)' }}><i className="fa-solid fa-chart-pie" style={{ marginRight: '8px' }}></i>{selectedCompany} 기능성 성분 분포</h3>
                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
                   {loadingCompanyData ? (
@@ -421,9 +421,9 @@ export default function DashboardPage() {
          </div>
 
          {/* 4~6. 탭 패널: 트렌드 디스커버리 / 워드클라우드 / 식품업계 뉴스 */}
-         <div style={{ marginTop: '48px' }}>
+         <div className="dashboard-panel-tabs" style={{ marginTop: '48px' }}>
             {/* 탭 버튼 3개 */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '0' }}>
+            <div className="dashboard-tab-list" style={{ display: 'flex', gap: '8px', marginBottom: '0' }}>
                {[
                   { id: 'trend',     icon: 'fa-fire',      label: '기능성 트렌드 디스커버리' },
                   { id: 'wordcloud', icon: 'fa-cloud',      label: '트렌드 워드클라우드' },
@@ -471,7 +471,7 @@ export default function DashboardPage() {
 
                   {/* 트렌드 디스커버리 */}
                   {activePanel === 'trend' && (
-                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                     <div className="trend-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
                         <div>
                            <h4 style={{ color: 'var(--accent-secondary)', marginBottom: '12px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <i className="fa-solid fa-fire" style={{ color: '#f59e0b' }}></i>

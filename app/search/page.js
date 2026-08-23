@@ -5,6 +5,68 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import MultiSelectPopup from '@/components/MultiSelectPopup';
 
+function CompactTagField({ value, placeholder, accent = 'var(--accent)', onOpen, onRemove }) {
+  const tags = value ? value.split(',').map(t => t.trim()).filter(Boolean) : [];
+  const visibleTags = tags.slice(0, 2);
+  const hiddenCount = Math.max(0, tags.length - visibleTags.length);
+
+  return (
+    <div
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className="compact-tag-field"
+      role="button"
+      tabIndex={0}
+      style={{ '--tag-accent': accent }}
+      title={tags.length ? tags.join(', ') : placeholder}
+    >
+      <div className="compact-tag-strip">
+        {tags.length ? (
+          <>
+            {visibleTags.map((tag) => (
+              <span key={tag} className="compact-tag">
+                <span>{tag}</span>
+                <i
+                  className="fa-solid fa-xmark"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(tag);
+                  }}
+                />
+              </span>
+            ))}
+            {hiddenCount > 0 && <span className="compact-tag-more">+{hiddenCount}</span>}
+          </>
+        ) : (
+          <span className="compact-tag-placeholder">{placeholder}</span>
+        )}
+      </div>
+      <i className="fa-solid fa-plus compact-tag-plus" />
+      {tags.length > 0 && (
+        <div className="compact-tag-popover">
+          {tags.map((tag) => (
+            <span key={tag} className="compact-tag popover-tag">
+              <span>{tag}</span>
+              <i
+                className="fa-solid fa-xmark"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(tag);
+                }}
+              />
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -221,11 +283,19 @@ function SearchContent() {
     window.location.href = `/api/export?${query.toString()}`;
   };
 
+  const removeFilterTag = (field, tag) => {
+    const nextTags = filters[field]
+      .split(',')
+      .map(t => t.trim())
+      .filter(t => t && t !== tag);
+    setFilters({ ...filters, [field]: nextTags.join(', ') });
+  };
+
   return (
-    <main className="container animate-fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+    <main className="container search-page animate-fade-in">
+      <div className="page-toolbar">
         <h1 className="title-gradient"><i className="fa-solid fa-database" style={{ marginRight: '12px' }}></i>데이터 정밀 검색</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="page-actions">
           <button
             type="button"
             className="btn sync-btn"
@@ -245,8 +315,8 @@ function SearchContent() {
         </div>
       </div>
 
-      <div className="glass-panel" style={{ marginBottom: '32px' }}>
-        <form onSubmit={handleSearch} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+      <div className="glass-panel search-panel" style={{ marginBottom: '32px' }}>
+        <form onSubmit={handleSearch} className="search-form-grid">
           <div style={{ gridColumn: '1 / -1' }}>
             {/* 통합검색 레이블 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -291,43 +361,13 @@ function SearchContent() {
           </div>
           <div style={{ position: 'relative' }}>
             <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--accent)', fontWeight: 600 }}>제형(제품형태)</label>
-            <div 
-              onClick={() => setFormPopupOpen(true)}
-              className="tag-input-container"
-              style={{ 
-                minHeight: '45px', 
-                padding: '8px 12px', 
-                border: '1px solid rgba(2, 132, 199, 0.2)', 
-                borderRadius: '8px', 
-                backgroundColor: '#fff',
-                cursor: 'pointer',
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '6px',
-                alignItems: 'center'
-              }}
-            >
-              {filters.dispos ? (
-                filters.dispos.split(',').map((tag, idx) => (
-                  <span key={idx} className="selected-tag" style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}>
-                    {tag.trim()}
-                    <i 
-                      className="fa-solid fa-xmark remove-tag" 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newTags = filters.dispos.split(',')
-                          .map(t => t.trim())
-                          .filter(t => t !== tag.trim());
-                        setFilters({ ...filters, dispos: newTags.join(', ') });
-                      }}
-                    ></i>
-                  </span>
-                ))
-              ) : (
-                <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>예: 캡슐, 정제...</span>
-              )}
-              <i className="fa-solid fa-plus" style={{ marginLeft: 'auto', color: 'var(--accent)', fontSize: '0.8rem' }}></i>
-            </div>
+            <CompactTagField
+              value={filters.dispos}
+              placeholder="제형 선택"
+              accent="#2563eb"
+              onOpen={() => setFormPopupOpen(true)}
+              onRemove={(tag) => removeFilterTag('dispos', tag)}
+            />
           </div>
           <div style={{ position: 'relative' }}>
             <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--accent-secondary)', fontWeight: 600 }}>
@@ -338,45 +378,13 @@ function SearchContent() {
               </span>
             </label>
             
-            {/* Selected Tags Display — 고정 높이, 스크롤 없음 */}
-            <div 
-              onClick={() => setFuncPopupOpen(true)}
-              className="tag-input-container"
-              style={{ 
-                height: '45px',
-                padding: '0 10px', 
-                border: '1px solid rgba(13, 148, 136, 0.2)', 
-                borderRadius: '8px', 
-                backgroundColor: '#fff',
-                cursor: 'pointer',
-                display: 'flex',
-                flexWrap: 'nowrap',
-                gap: '4px',
-                alignItems: 'center',
-                overflow: 'hidden'  /* 스크롤바 완전 제거 */
-              }}
-            >
-              {filters.normalizedFunctionality ? (
-                filters.normalizedFunctionality.split(',').map((tag, idx) => (
-                  <span key={idx} className="selected-tag" style={{ flexShrink: 0, fontSize: '0.78rem', padding: '3px 8px' }}>
-                    {tag.trim()}
-                    <i 
-                      className="fa-solid fa-xmark remove-tag" 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newTags = filters.normalizedFunctionality.split(',')
-                          .map(t => t.trim())
-                          .filter(t => t !== tag.trim());
-                        setFilters({ ...filters, normalizedFunctionality: newTags.join(', ') });
-                      }}
-                    ></i>
-                  </span>
-                ))
-              ) : (
-                <span style={{ color: '#94a3b8', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>기능성 성분 선택</span>
-              )}
-              <i className="fa-solid fa-plus" style={{ marginLeft: 'auto', color: 'var(--accent)', fontSize: '0.8rem', flexShrink: 0 }}></i>
-            </div>
+            <CompactTagField
+              value={filters.normalizedFunctionality}
+              placeholder="기능성 성분 선택"
+              accent="#0d9488"
+              onOpen={() => setFuncPopupOpen(true)}
+              onRemove={(tag) => removeFilterTag('normalizedFunctionality', tag)}
+            />
           </div>
           <div>
             <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--accent)', fontWeight: 600 }}>
@@ -386,16 +394,15 @@ function SearchContent() {
                 <span className="tooltip">HDPE, LDPE, PET, PTP, 유리 등 포장재질 키워드를 입력하세요.</span>
               </span>
             </label>
-            <input
-              type="text"
-              placeholder="예: HDPE, 유리"
+            <CompactTagField
               value={filters.normalizedPackaging}
-              onClick={() => setPackPopupOpen(true)}
-              readOnly
-              style={{ borderColor: 'rgba(2, 132, 199, 0.2)', cursor: 'pointer', backgroundColor: '#fff' }}
+              placeholder="포장 재질 선택"
+              accent="#0284c7"
+              onOpen={() => setPackPopupOpen(true)}
+              onRemove={(tag) => removeFilterTag('normalizedPackaging', tag)}
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', gridColumn: '1 / -1', flexWrap: 'wrap' }}>
+          <div className="search-action-row">
             {/* 기능성 완전 일치 체크박스 - 항상 표시 */}
             <label
               htmlFor="exactFuncCheckbox"
@@ -544,7 +551,7 @@ function SearchContent() {
                 ))}
                 {data.length === 0 && (
                   <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '32px' }}>검색 결과가 없습니다.</td>
+                    <td colSpan="9" style={{ textAlign: 'center', padding: '32px' }}>검색 결과가 없습니다.</td>
                   </tr>
                 )}
               </tbody>
