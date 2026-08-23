@@ -39,6 +39,35 @@ export async function POST(req) {
   const offset = parseInt(body.offset || '0');
   const mode = body.mode || 'missing';
 
+  // re-embed 모드: 청크는 있지만 임베딩이 null인 청크만 재처리
+  if (mode === 're-embed') {
+    const chunks = await prisma.committee_chunks.findMany({
+      where: { embedding: null },
+      orderBy: { id: 'asc' },
+      skip: offset,
+      take: batchSize * 5, // 청크 단위로 처리 (회의 단위 아님)
+    });
+
+    if (chunks.length === 0) return NextResponse.json({ done: true, processed: 0 });
+
+    let embedded = 0;
+    for (const chunk of chunks) {
+      try {
+        const vec = await getEmbedding(chunk.content);
+        if (vec?.length > 0) {
+          await prisma.committee_chunks.update({
+            where: { id: chunk.id },
+            data: { embedding: JSON.stringify(vec) },
+          });
+          embedded++;
+        }
+      } catch (e) { /* Rate limit 등 → 다음 배치에서 재시도 */ }
+    }
+
+    const remaining = await prisma.committee_chunks.count({ where: { embedding: null } });
+    return NextResponse.json({ done: chunks.length < batchSize * 5, processed: chunks.length, embedded, remaining, nextOffset: offset + chunks.length });
+  }
+
   const where = mode === 'all' ? {} : { chunks: { none: {} } };
 
   const meetings = await prisma.committee_meetings.findMany({
