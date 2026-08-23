@@ -1094,7 +1094,7 @@ export default function CommitteePage() {
                             {/* 첨부파일 다운로드 & PDF 미리보기 버튼 */}
                             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                               {/* PDF 미리보기 버튼 */}
-                              {m.pdfFileUrl && (
+                              {m.pdfFileUrl && m.pdfFileUrl !== 'NONE' && (
                                 <button
                                   onClick={() => setPreviewPdf({ id: m.id, title: m.title, fileName: m.pdfFileName, fileUrl: m.pdfFileUrl })}
                                   style={{
@@ -1108,7 +1108,7 @@ export default function CommitteePage() {
                               )}
 
                               {/* PDF 다운로드 버튼 */}
-                              {m.pdfFileUrl && (
+                              {m.pdfFileUrl && m.pdfFileUrl !== 'NONE' && (
                                 <a
                                   href={`/api/committee/pdf/${m.id}?download=true`}
                                   download
@@ -1319,7 +1319,7 @@ export default function CommitteePage() {
                           </td>
                           <td style={{ padding: "10px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
                             <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
-                              {ag.meeting?.pdfFileUrl && (
+                              {ag.meeting?.pdfFileUrl && ag.meeting?.pdfFileUrl !== 'NONE' && (
                                 <button
                                   onClick={() => setPreviewPdf({ id: ag.meeting.id, title: ag.meeting.title, fileName: ag.meeting.pdfFileName, fileUrl: ag.meeting.pdfFileUrl })}
                                   style={{
@@ -1523,7 +1523,7 @@ export default function CommitteePage() {
                         </td>
                         <td style={{ padding: "12px 16px", textAlign: "center", whiteSpace: "nowrap" }}>
                           <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-                            {ag.meeting?.pdfFileUrl && (
+                            {ag.meeting?.pdfFileUrl && ag.meeting?.pdfFileUrl !== 'NONE' && (
                               <button
                                 onClick={() => setPreviewPdf({ id: ag.meeting.id, title: ag.meeting.title, fileName: ag.meeting.pdfFileName, fileUrl: ag.meeting.pdfFileUrl })}
                                 style={{
