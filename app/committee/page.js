@@ -147,6 +147,7 @@ export default function CommitteePage() {
   // 레이아웃 & 확대 상태
   const [isFullscreenAgenda, setIsFullscreenAgenda] = useState(false);
   const [isWideLayout, setIsWideLayout] = useState(false);
+  const [mobileSection, setMobileSection] = useState("meetings"); // 'meetings' | 'agendas' | 'ai'
 
   // 1. 회의 게시물 데이터 상태
   const [meetings, setMeetings] = useState([]);
@@ -507,20 +508,25 @@ export default function CommitteePage() {
   const handleCardClick = (cardType) => {
     if (cardType === "meetings") {
       setViewTab("meetings");
+      setMobileSection("meetings");
       setMeetingSearch("");
       setMeetingDeptFilter("");
     } else if (cardType === "all_agendas") {
       setViewTab("agendas");
+      setMobileSection("agendas");
       setAgendaResultFilter("");
       setAgendaSearch("");
     } else if (cardType === "approved") {
       setViewTab("agendas");
+      setMobileSection("agendas");
       setAgendaResultFilter("인정");
     } else if (cardType === "supplement") {
       setViewTab("agendas");
+      setMobileSection("agendas");
       setAgendaResultFilter("보완");
     } else if (cardType === "rejected") {
       setViewTab("agendas");
+      setMobileSection("agendas");
       setAgendaResultFilter("불인정");
     }
   };
@@ -638,6 +644,35 @@ export default function CommitteePage() {
         ))}
       </div>
 
+      {isMobile && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, background: "#e2e8f0", padding: 4, borderRadius: 10, marginBottom: 14 }}>
+          {[
+            { key: "meetings", label: "회의록", icon: "fa-newspaper", action: () => { setMobileSection("meetings"); setViewTab("meetings"); } },
+            { key: "agendas", label: "안건", icon: "fa-list-check", action: () => { setMobileSection("agendas"); setViewTab("agendas"); } },
+            { key: "ai", label: "AI Q&A", icon: "fa-robot", action: () => setMobileSection("ai") },
+          ].map(item => (
+            <button
+              key={item.key}
+              onClick={item.action}
+              style={{
+                minHeight: 42,
+                border: "none",
+                borderRadius: 8,
+                background: mobileSection === item.key ? "#fff" : "transparent",
+                color: mobileSection === item.key ? "#0284c7" : "#64748b",
+                fontSize: "0.78rem",
+                fontWeight: mobileSection === item.key ? 900 : 700,
+                cursor: "pointer",
+                boxShadow: mobileSection === item.key ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+              }}
+            >
+              <i className={`fa-solid ${item.icon}`} style={{ marginRight: 5 }} />
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── 메인 레이아웃 (좌측: AI 챗봇 / 우측: 회의 게시물 & 안건 탭) ── */}
       <div style={{
         display: "grid",
@@ -648,7 +683,7 @@ export default function CommitteePage() {
       }}>
         
         {/* 🤖 1. AI 심의 도우미 Q&A 챗봇 (와이드 모드 시 접힘) */}
-        {!isWideLayout && (
+        {!isWideLayout && (!isMobile || mobileSection === "ai") && (
           <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", height: isMobile ? "calc(100vh - 120px)" : "860px", minHeight: isMobile ? 540 : 0, overflow: "hidden" }}>
             {/* 챗봇 헤더 */}
             <div style={{ padding: isMobile ? "14px 14px" : "16px 20px", borderBottom: "1px solid #e2e8f0", background: "linear-gradient(135deg, #0f172a, #1e293b)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: 10, flexWrap: isMobile ? "wrap" : "nowrap" }}>
@@ -856,7 +891,7 @@ export default function CommitteePage() {
         )}
 
         {/* 📋 2. 우측 탭 전환 영역 (회의 게시물 뷰 vs 안건별 결과 뷰) */}
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", padding: isMobile ? "14px 12px 10px" : "20px 20px 10px", minHeight: isMobile ? "auto" : "860px", display: "flex", flexDirection: "column" }}>
+        {(!isMobile || mobileSection === "meetings" || mobileSection === "agendas") && <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", padding: isMobile ? "14px 12px 10px" : "20px 20px 10px", minHeight: isMobile ? "auto" : "860px", display: "flex", flexDirection: "column" }}>
           
           {/* 상단 탭 헤더 & 도구 버튼 */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #f1f5f9", paddingBottom: 14, marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
@@ -864,7 +899,7 @@ export default function CommitteePage() {
               <button
                 onClick={() => setViewTab("meetings")}
                 style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "8px 16px",
+                  display: "flex", alignItems: "center", gap: 8, padding: isMobile ? "8px 10px" : "8px 16px",
                   borderRadius: 10, border: "none", fontSize: "0.88rem", fontWeight: 800, cursor: "pointer",
                   background: viewTab === "meetings" ? "#0284c7" : "#f1f5f9",
                   color: viewTab === "meetings" ? "#fff" : "#64748b",
@@ -872,7 +907,7 @@ export default function CommitteePage() {
                 }}
               >
                 <i className="fa-solid fa-newspaper" />
-                회의 게시물 뷰 (공시 목록)
+                {isMobile ? "회의록" : "회의 게시물 뷰 (공시 목록)"}
                 <span style={{ fontSize: "0.72rem", background: viewTab === "meetings" ? "rgba(255,255,255,0.25)" : "#e2e8f0", padding: "2px 6px", borderRadius: 10 }}>
                   {meetingTotal}
                 </span>
@@ -881,7 +916,7 @@ export default function CommitteePage() {
               <button
                 onClick={() => setViewTab("agendas")}
                 style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "8px 16px",
+                  display: "flex", alignItems: "center", gap: 8, padding: isMobile ? "8px 10px" : "8px 16px",
                   borderRadius: 10, border: "none", fontSize: "0.88rem", fontWeight: 800, cursor: "pointer",
                   background: viewTab === "agendas" ? "#0284c7" : "#f1f5f9",
                   color: viewTab === "agendas" ? "#fff" : "#64748b",
@@ -889,7 +924,7 @@ export default function CommitteePage() {
                 }}
               >
                 <i className="fa-solid fa-list-check" />
-                심의 안건별 결과 뷰
+                {isMobile ? "안건별" : "심의 안건별 결과 뷰"}
                 <span style={{ fontSize: "0.72rem", background: viewTab === "agendas" ? "rgba(255,255,255,0.25)" : "#e2e8f0", padding: "2px 6px", borderRadius: 10 }}>
                   {agendaTotal}
                 </span>
@@ -1004,7 +1039,7 @@ export default function CommitteePage() {
 
               {/* ── 구분 첫행 헤더 바 (정렬 토글 버튼 포함) ── */}
               <div style={{
-                display: "grid",
+                display: isMobile ? "none" : "grid",
                 gridTemplateColumns: "60px 1fr 110px 110px 85px 100px",
                 background: "#f8fafc",
                 border: "1px solid #e2e8f0",
@@ -1282,7 +1317,64 @@ export default function CommitteePage() {
                 />
               </div>
 
-              {/* 안건 목록 테이블 */}
+              {/* 안건 목록 */}
+              {isMobile ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {loading ? (
+                    <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: 8 }} />안건 목록을 불러오는 중...</div>
+                  ) : agendas.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>등록된 안건 데이터가 없습니다.</div>
+                  ) : (
+                    agendas.map((ag) => {
+                      const ingredientName = cleanCommitteeText(ag.ingredientName);
+                      const rawName = cleanCommitteeText(ag.rawName);
+                      const agendaType = cleanCommitteeText(ag.agendaType);
+
+                      return (
+                        <article key={ag.id} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 13px", boxShadow: "0 1px 4px rgba(15,23,42,0.04)" }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: "0.73rem", color: "#64748b", fontWeight: 800, marginBottom: 3 }}>
+                                {ag.meeting?.meetingNo || "심의회의"} · {ag.meeting?.meetingDate || ag.meeting?.postDate || "-"}
+                              </div>
+                              <strong title={ingredientName} style={{ color: "#0f172a", fontSize: "0.92rem", lineHeight: 1.35, ...twoLineClampStyle }}>{ingredientName || "-"}</strong>
+                            </div>
+                            <div style={{ flexShrink: 0 }}>{getResultBadge(ag.result)}</div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: rawName ? 8 : 0 }}>
+                            {agendaType && <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 7px", borderRadius: 5, fontSize: "0.7rem", fontWeight: 700 }}>{agendaType}</span>}
+                          </div>
+                          {rawName && (
+                            <div title={rawName} style={{ fontSize: "0.78rem", color: "#64748b", lineHeight: 1.5, marginBottom: 10, ...twoLineClampStyle }}>
+                              {rawName}
+                            </div>
+                          )}
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {ag.meeting?.pdfFileUrl && ag.meeting?.pdfFileUrl !== 'NONE' && (
+                              <button
+                                onClick={() => setPreviewPdf({ id: ag.meeting.id, title: ag.meeting.title, fileName: ag.meeting.pdfFileName, fileUrl: ag.meeting.pdfFileUrl })}
+                                style={{ flex: 1, padding: "8px 10px", background: "#0284c7", color: "#fff", border: "none", borderRadius: 7, fontSize: "0.76rem", fontWeight: 800, cursor: "pointer" }}
+                              >
+                                <i className="fa-solid fa-eye" style={{ marginRight: 5 }} /> PDF
+                              </button>
+                            )}
+                            {ag.meeting?.sourceUrl && (
+                              <a
+                                href={ag.meeting.sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ flex: 1, padding: "8px 10px", background: "#f8fafc", color: "#0284c7", border: "1px solid #cbd5e1", borderRadius: 7, fontSize: "0.76rem", fontWeight: 800, textDecoration: "none", textAlign: "center" }}
+                              >
+                                <i className="fa-solid fa-arrow-up-right-from-square" style={{ marginRight: 5 }} /> 공시
+                              </a>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
               <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflowX: "auto", flex: 1, maxHeight: "620px", overflowY: "auto" }}>
                 <table style={{ width: "100%", minWidth: isMobile ? 620 : 0, borderCollapse: "collapse", fontSize: "0.8rem" }}>
                   <thead>
@@ -1403,6 +1495,7 @@ export default function CommitteePage() {
                   </tbody>
                 </table>
               </div>
+              )}
 
               {/* ── 안건 뷰 중앙 번호형 페이지네이션 ── */}
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #f1f5f9", textAlign: "center" }}>
@@ -1418,7 +1511,7 @@ export default function CommitteePage() {
             </div>
           )}
 
-        </div>
+        </div>}
 
       </div>
 

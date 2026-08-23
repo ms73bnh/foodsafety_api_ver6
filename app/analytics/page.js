@@ -63,7 +63,7 @@ function SheetModal({ data, selectedCompanies, onClose }) {
     URL.revokeObjectURL(url);
   };
 
-  const SortIcon = ({ col }) => (
+  const renderSortIcon = (col) => (
     <span style={{ marginLeft: 3, opacity: sortCol === col ? 1 : 0.3, fontSize: "0.65rem" }}>
       {sortCol === col ? (sortDir === "desc" ? "▼" : "▲") : "▼"}
     </span>
@@ -189,11 +189,11 @@ function SheetModal({ data, selectedCompanies, onClose }) {
                   <th style={{ position: "sticky", left: 300, zIndex: 15, background: "#f1f5f9", padding: "10px 12px", textAlign: "left", width: 170, minWidth: 170, border: "1px solid #e2e8f0", color: "#475569", fontWeight: 700 }}>제조업소</th>
                   <th style={{ position: "sticky", left: 470, zIndex: 15, background: "#f1f5f9", padding: "10px 10px", textAlign: "center", width: 100, minWidth: 100, border: "1px solid #e2e8f0", borderRight: "2px solid #0d9488", color: "#475569", fontWeight: 700 }}>허가일자</th>
                   <th onClick={() => handleSort("total")} style={{ padding: "10px 12px", textAlign: "right", width: 110, minWidth: 110, background: "rgba(13, 148, 136, 0.08)", color: "#0d9488", fontWeight: 800, border: "1px solid #e2e8f0", cursor: "pointer", whiteSpace: "nowrap" }}>
-                    총합계<SortIcon col="total" />
+                    총합계{renderSortIcon("total")}
                   </th>
                   {YEARS_10.map(yr => (
                     <th key={yr} onClick={() => handleSort(yr)} style={{ padding: "10px 8px", textAlign: "right", width: 75, minWidth: 75, background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#475569", cursor: "pointer", whiteSpace: "nowrap", fontWeight: 700 }}>
-                      {yr}년<SortIcon col={yr} />
+                      {yr}년{renderSortIcon(yr)}
                     </th>
                   ))}
                 </tr>
@@ -249,8 +249,17 @@ function DrilldownPane({ ingredientsList }) {
   const [loading, setLoading] = useState(false);
   const [showSheet, setShowSheet] = useState(false);
   const [hoveredBar, setHoveredBar] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileStep, setMobileStep] = useState(1);
 
   const QUICK_TAGS = ["체지방", "여성갱년기", "수면", "간건강", "관절", "눈건강", "혈당", "콜레스테롤", "루바브", "아쉬와간다"];
+
+  useEffect(() => {
+    const updateViewport = () => setIsMobile(window.innerWidth < 820);
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
 
   const filteredIngr = useMemo(() => {
     if (!searchQuery) return ingredientsList;
@@ -267,6 +276,7 @@ function DrilldownPane({ ingredientsList }) {
   const handleSelectIngr = useCallback(async (ing) => {
     setSelectedIngr(ing);
     setSelectedCompanies(new Set());
+    setMobileStep(2);
     setLoading(true);
     try {
       const res = await fetch("/api/analytics/report?type=drilldown&ingredientId=" + ing.id);
@@ -323,8 +333,10 @@ function DrilldownPane({ ingredientsList }) {
 
   const maxBar = Math.max(...filteredYearly.map(y => y.amount), 1);
 
-  const paneStyle = { background: "#fff", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden", display: "flex", flexDirection: "column" };
+  const paneStyle = { background: "#fff", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden", display: "flex", flexDirection: "column", minHeight: isMobile ? "calc(100vh - 260px)" : "auto" };
   const paneTitleStyle = { padding: "14px 18px", borderBottom: "1px solid #f1f5f9", background: "#f8fafc", fontWeight: 800, fontSize: "0.88rem", color: "#0f172a", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 };
+  const mobileCanOpenStep2 = !!selectedIngr || loading || !!drillData;
+  const mobileCanOpenStep3 = !!drillData || loading;
 
   return (
     <>
@@ -332,10 +344,38 @@ function DrilldownPane({ ingredientsList }) {
         <SheetModal data={drillData} selectedCompanies={selectedCompanies} onClose={() => setShowSheet(false)} />
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "28% 27% 45%", gap: 16, alignItems: "stretch", minHeight: 600 }}>
+      {isMobile && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginBottom: 12 }}>
+          {[
+            { step: 1, label: "소재", enabled: true },
+            { step: 2, label: "제조사", enabled: mobileCanOpenStep2 },
+            { step: 3, label: "분석", enabled: mobileCanOpenStep3 },
+          ].map(item => (
+            <button
+              key={item.step}
+              onClick={() => item.enabled && setMobileStep(item.step)}
+              disabled={!item.enabled}
+              style={{
+                minHeight: 42,
+                border: "1px solid " + (mobileStep === item.step ? "#0d9488" : "#e2e8f0"),
+                borderRadius: 10,
+                background: mobileStep === item.step ? "#0d9488" : "#fff",
+                color: mobileStep === item.step ? "#fff" : item.enabled ? "#334155" : "#94a3b8",
+                fontSize: "0.78rem",
+                fontWeight: 800,
+                cursor: item.enabled ? "pointer" : "not-allowed",
+              }}
+            >
+              {item.step}. {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "28% 27% 45%", gap: 16, alignItems: "stretch", minHeight: isMobile ? 0 : 600 }}>
 
         {/* PANE 1 */}
-        <div style={paneStyle}>
+        {(!isMobile || mobileStep === 1) && <div style={paneStyle}>
           <div style={paneTitleStyle}>
             <i className="fa-solid fa-flask" style={{ color: "#0d9488" }} />
             1단계: 개별인정원료 선택
@@ -367,10 +407,10 @@ function DrilldownPane({ ingredientsList }) {
               );
             })}
           </div>
-        </div>
+        </div>}
 
         {/* PANE 2 */}
-        <div style={paneStyle}>
+        {(!isMobile || mobileStep === 2) && <div style={paneStyle}>
           <div style={paneTitleStyle}>
             <i className="fa-solid fa-building" style={{ color: "#0284c7" }} />
             2단계: 제조사 선택
@@ -399,6 +439,12 @@ function DrilldownPane({ ingredientsList }) {
                   style={{ flex: 1, padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", color: "#64748b", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer" }}>
                   전체 해제
                 </button>
+                {isMobile && (
+                  <button onClick={() => setMobileStep(3)}
+                    style={{ flex: 1, padding: "6px 10px", border: "none", borderRadius: 6, background: "#0284c7", color: "#fff", fontSize: "0.76rem", fontWeight: 800, cursor: "pointer" }}>
+                    분석 보기
+                  </button>
+                )}
               </div>
               <div style={{ flex: 1, overflowY: "auto", maxHeight: 480 }}>
                 {(drillData.companies || []).map((comp, idx) => {
@@ -432,10 +478,10 @@ function DrilldownPane({ ingredientsList }) {
               </div>
             </>
           )}
-        </div>
+        </div>}
 
         {/* PANE 3 */}
-        <div style={paneStyle}>
+        {(!isMobile || mobileStep === 3) && <div style={paneStyle}>
           <div style={paneTitleStyle}>
             <i className="fa-solid fa-chart-pie" style={{ color: "#7c3aed" }} />
             3단계: 실시간 분석 브리핑
@@ -529,7 +575,7 @@ function DrilldownPane({ ingredientsList }) {
               )}
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </>
   );
@@ -546,6 +592,7 @@ export default function AnalyticsReportPage() {
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [hoveredBar, setHoveredBar] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -553,6 +600,13 @@ export default function AnalyticsReportPage() {
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const updateViewport = () => setIsMobile(window.innerWidth < 820);
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
   }, []);
 
   useEffect(() => {
@@ -601,19 +655,19 @@ export default function AnalyticsReportPage() {
   const COLORS_LOCAL = ["#0284c7", "#0d9488", "#7c3aed", "#f59e0b", "#ef4444", "#10b981", "#8b5cf6", "#f97316"];
 
   return (
-    <main style={{ minHeight: "100vh", background: "#f8fafc", padding: "32px 20px" }}>
+    <main style={{ minHeight: "100vh", background: "#f8fafc", padding: isMobile ? "18px 10px 36px" : "32px 20px" }}>
       <div style={{ maxWidth: 1400, margin: "0 auto 24px" }} className="no-print">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: 8, marginBottom: 4, flexDirection: isMobile ? "column" : "row" }}>
               <span style={{ background: "linear-gradient(135deg, #0d9488, #0284c7)", color: "#fff", padding: "3px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 800 }}>3-Way Data Intelligence</span>
               <span style={{ fontSize: "0.8rem", color: "#64748b" }}>품목신고 × 개별인정원료 × 생산실적 연계 분석</span>
             </div>
-            <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#0f172a", margin: 0 }}>
+            <h1 style={{ fontSize: isMobile ? "1.45rem" : "1.75rem", fontWeight: 800, color: "#0f172a", margin: 0, lineHeight: 1.25 }}>
               <i className="fa-solid fa-chart-pie" style={{ color: "#0d9488", marginRight: 10 }} />통합 분석 레포트
             </h1>
           </div>
-          <button onClick={() => window.print()} style={{ padding: "9px 18px", background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.86rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 2px 8px rgba(15,23,42,0.2)" }}>
+          <button onClick={() => window.print()} style={{ padding: "9px 18px", background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.86rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, boxShadow: "0 2px 8px rgba(15,23,42,0.2)", width: isMobile ? "100%" : "auto" }}>
             <i className="fa-solid fa-print" /> PDF / 인쇄 레포트 출력
           </button>
         </div>
@@ -631,8 +685,8 @@ export default function AnalyticsReportPage() {
                 setReportData(null);
               }
             }}
-              style={{ flex: 1, minWidth: 200, padding: "10px 14px", border: "none", borderRadius: 8, background: activeTab === tab.key ? "#fff" : "transparent", color: activeTab === tab.key ? "#0d9488" : "#64748b", fontWeight: activeTab === tab.key ? 800 : 600, fontSize: "0.88rem", cursor: "pointer", boxShadow: activeTab === tab.key ? "0 2px 6px rgba(0,0,0,0.06)" : "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.15s" }}>
-              <i className={"fa-solid " + tab.icon} />{tab.label}
+              style={{ flex: isMobile ? "0 0 auto" : 1, minWidth: isMobile ? 118 : 200, padding: isMobile ? "9px 10px" : "10px 14px", border: "none", borderRadius: 8, background: activeTab === tab.key ? "#fff" : "transparent", color: activeTab === tab.key ? "#0d9488" : "#64748b", fontWeight: activeTab === tab.key ? 800 : 600, fontSize: isMobile ? "0.78rem" : "0.88rem", cursor: "pointer", boxShadow: activeTab === tab.key ? "0 2px 6px rgba(0,0,0,0.06)" : "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.15s", whiteSpace: "nowrap" }}>
+              <i className={"fa-solid " + tab.icon} />{isMobile ? (tab.key === "drilldown" ? "소재 분석" : tab.key === "ingredient" ? "원료별" : "제조사") : tab.label}
             </button>
           ))}
         </div>

@@ -17,6 +17,7 @@ export default function Navbar() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState({ text: '', error: false });
   const [menuConfig, setMenuConfig] = useState(null); // null = 아직 로딩 안됨
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const drawerRef = useRef(null);
 
   useEffect(() => {
@@ -55,6 +56,10 @@ export default function Navbar() {
     fetchMe();
     fetchMenuConfig();
   }, [pathname, router]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   // 메뉴 항목이 현재 사용자에게 표시되어야 하는지 확인
   const isMenuVisible = (key) => {
@@ -160,6 +165,48 @@ export default function Navbar() {
   const isAdminUser = user && user.role === 'ADMIN';
   const isSalesOrAboveUser = user && (user.role === 'ADMIN' || user.role === 'SALES');
 
+  const mobileMenuSections = [
+    {
+      title: '메인',
+      items: [
+        isMenuVisible('dashboard') && { href: '/', label: '대시보드', icon: 'fa-chart-line', active: pathname === '/' },
+        isMenuVisible('production') && { href: '/production', label: '생산 실적 분석', icon: 'fa-boxes-stacked', active: pathname.startsWith('/production'), color: '#0d9488' },
+        isMenuVisible('analytics') && { href: '/analytics', label: '통합 분석 레포트', icon: 'fa-chart-pie', active: pathname === '/analytics', color: '#0284c7' },
+      ].filter(Boolean),
+    },
+    {
+      title: '데이터 검색',
+      items: [
+        isMenuVisible('search') && { href: '/search', label: '건강기능식품 검색', icon: 'fa-capsules', active: pathname === '/search' },
+        isMenuVisible('general-search') && { href: '/general-search', label: '일반식품 검색', icon: 'fa-bowl-food', active: pathname === '/general-search', color: '#6366f1' },
+      ].filter(Boolean),
+    },
+    {
+      title: '업체',
+      items: [
+        isMenuVisible('companies') && { href: '/companies', label: '업체별 현황', icon: 'fa-building', active: pathname === '/companies' },
+        isMenuVisible('companies-compare') && { href: '/companies/compare', label: '업체 상호 비교', icon: 'fa-code-compare', active: pathname === '/companies/compare' },
+      ].filter(Boolean),
+    },
+    {
+      title: '개별인정형',
+      items: [
+        isMenuVisible('categories') && { href: '/categories', label: '기능성 카테고리', icon: 'fa-tags', active: pathname === '/categories', color: '#7c3aed' },
+        isMenuVisible('ingredients') && { href: '/ingredients', label: '개별인정원료', icon: 'fa-flask', active: pathname === '/ingredients', color: '#0d9488' },
+        isMenuVisible('guidelines') && { href: '/guidelines', label: '기능성 평가 가이드라인', icon: 'fa-book-bookmark', active: pathname === '/guidelines' },
+        isMenuVisible('raw-materials') && { href: '/raw-materials', label: '원료별 정보 공시', icon: 'fa-flask-vial', active: pathname === '/raw-materials', color: '#059669' },
+        isMenuVisible('committee') && { href: '/committee', label: '심의위원회 회의록 (AI Q&A)', icon: 'fa-robot', active: pathname === '/committee' },
+      ].filter(Boolean),
+    },
+    {
+      title: '기타',
+      items: [
+        isMenuVisible('qna') && { href: '/qna', label: 'Q&A', icon: 'fa-comments', active: pathname === '/qna' },
+        isAdminUser && { href: '/manage', label: '시스템 관리', icon: 'fa-database', active: pathname.startsWith('/manage') },
+      ].filter(Boolean),
+    },
+  ].filter(section => section.items.length > 0);
+
 
   const inputStyle = { width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '0.85rem', boxSizing: 'border-box', outline: 'none', background: '#fff' };
   const labelStyle = { display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' };
@@ -168,8 +215,18 @@ export default function Navbar() {
     <>
       <nav className="navbar">
         <div className="navbar-container" style={{ maxWidth: '1600px', width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button
+            className="mobile-menu-button"
+            onClick={() => setMobileMenuOpen(true)}
+            title="메뉴 열기"
+            aria-label="메뉴 열기"
+          >
+            <i className="fa-solid fa-bars"></i>
+          </button>
+
           <Link
             href="/"
+            className="navbar-brand"
             style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-color)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}
           >
             <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg, #0d9488, #0284c7)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
@@ -178,7 +235,7 @@ export default function Navbar() {
             건강기능식품 데이터 인사이트
           </Link>
 
-          <div style={{ display: 'flex', gap: '6px', margin: '0 20px', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <div className="desktop-nav-menu" style={{ display: 'flex', gap: '6px', margin: '0 20px', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             {isMenuVisible('dashboard') && (
               <Link href="/" className={`navbar-item ${pathname === '/' ? 'active' : ''}`}><i className="fa-solid fa-chart-line" style={{ marginRight: '6px' }}></i>대시보드</Link>
             )}
@@ -272,7 +329,7 @@ export default function Navbar() {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+          <div className="navbar-user-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
             {isAdminUser && (
               <button onClick={handleSync} className={`sync-btn ${syncing ? 'loading' : ''}`} style={{ background: 'linear-gradient(135deg, #0d9488, #0284c7)', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontWeight: '600', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
                 <i className={`fa-solid fa-rotate ${syncing ? 'fa-spin' : ''}`}></i> {syncing ? '동기화 중...' : '수동 동기화'}
@@ -316,6 +373,65 @@ export default function Navbar() {
           </div>
         </div>
       </nav>
+
+      {mobileMenuOpen && (
+        <div className="mobile-menu-layer">
+          <div className="mobile-menu-backdrop" onClick={() => setMobileMenuOpen(false)} />
+          <aside className="mobile-menu-drawer" aria-label="모바일 메뉴">
+            <div className="mobile-menu-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg, #0d9488, #0284c7)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
+                  <i className="fa-solid fa-leaf"></i>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>데이터 인사이트</div>
+                  {user && <div style={{ color: '#64748b', fontSize: '0.74rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name} · {user.companyNm || user.role}</div>}
+                </div>
+              </div>
+              <button className="mobile-menu-close" onClick={() => setMobileMenuOpen(false)} title="메뉴 닫기" aria-label="메뉴 닫기">
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <div className="mobile-menu-content">
+              {mobileMenuSections.map(section => (
+                <section key={section.title} className="mobile-menu-section">
+                  <div className="mobile-menu-section-title">{section.title}</div>
+                  {section.items.map(item => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`mobile-menu-link ${item.active ? 'active' : ''}`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <i className={`fa-solid ${item.icon}`} style={{ color: item.color || '#0284c7' }}></i>
+                      <span>{item.label}</span>
+                      {item.active && <i className="fa-solid fa-check" style={{ marginLeft: 'auto', color: '#0d9488', fontSize: '0.76rem' }}></i>}
+                    </Link>
+                  ))}
+                </section>
+              ))}
+            </div>
+
+            <div className="mobile-menu-footer">
+              {user ? (
+                <>
+                  <button onClick={() => { setMobileMenuOpen(false); openProfile(); }} className="mobile-menu-footer-button">
+                    <i className="fa-solid fa-user"></i>
+                    내 프로필
+                  </button>
+                  <button onClick={handleLogout} className="mobile-menu-footer-button danger">
+                    <i className="fa-solid fa-right-from-bracket"></i>
+                    로그아웃
+                  </button>
+                </>
+              ) : (
+                !loading && <Link href="/login" className="mobile-menu-footer-button" onClick={() => setMobileMenuOpen(false)}><i className="fa-solid fa-lock"></i> 로그인</Link>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
 
       {/* ─── 프로필 드로어 (오른쪽 슬라이드 패널) ─── */}
       {profileOpen && (
@@ -478,6 +594,150 @@ export default function Navbar() {
         .dropdown-link:hover {
           background-color: rgba(2, 132, 199, 0.06);
           color: var(--accent);
+        }
+        .mobile-menu-button {
+          display: none;
+          width: 38px;
+          height: 38px;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          background: #fff;
+          color: #0f172a;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          font-size: 1rem;
+        }
+        .mobile-menu-layer {
+          position: fixed;
+          inset: 0;
+          z-index: 10000;
+        }
+        .mobile-menu-backdrop {
+          position: absolute;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.38);
+          backdrop-filter: blur(2px);
+        }
+        .mobile-menu-drawer {
+          position: relative;
+          width: min(86vw, 340px);
+          height: 100vh;
+          background: #fff;
+          box-shadow: 12px 0 36px rgba(15, 23, 42, 0.22);
+          display: flex;
+          flex-direction: column;
+          animation: mobileMenuIn 0.2s ease-out;
+        }
+        @keyframes mobileMenuIn {
+          from { transform: translateX(-100%); }
+          to { transform: translateX(0); }
+        }
+        .mobile-menu-header {
+          padding: 16px;
+          border-bottom: 1px solid #e2e8f0;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          background: #f8fafc;
+        }
+        .mobile-menu-close {
+          width: 34px;
+          height: 34px;
+          border: none;
+          border-radius: 9px;
+          background: #e2e8f0;
+          color: #475569;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .mobile-menu-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 12px;
+        }
+        .mobile-menu-section {
+          padding: 8px 0 12px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .mobile-menu-section:last-child {
+          border-bottom: none;
+        }
+        .mobile-menu-section-title {
+          color: #94a3b8;
+          font-size: 0.72rem;
+          font-weight: 800;
+          padding: 0 8px 6px;
+        }
+        .mobile-menu-link {
+          min-height: 44px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          color: #334155;
+          text-decoration: none;
+          font-size: 0.9rem;
+          font-weight: 700;
+        }
+        .mobile-menu-link.active {
+          background: #f0fdfa;
+          color: #0f766e;
+        }
+        .mobile-menu-footer {
+          border-top: 1px solid #e2e8f0;
+          padding: 12px;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+          background: #f8fafc;
+        }
+        .mobile-menu-footer-button {
+          min-height: 40px;
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
+          background: #fff;
+          color: #334155;
+          font-size: 0.82rem;
+          font-weight: 800;
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          cursor: pointer;
+        }
+        .mobile-menu-footer-button.danger {
+          color: #dc2626;
+        }
+        @media (max-width: 768px) {
+          .mobile-menu-button {
+            display: inline-flex;
+            flex-shrink: 0;
+          }
+          .desktop-nav-menu {
+            display: none !important;
+          }
+          .navbar-brand {
+            flex: 1;
+            min-width: 0;
+            font-size: 0.9rem !important;
+          }
+          .navbar-brand > div {
+            width: 30px !important;
+            height: 30px !important;
+          }
+          .navbar-user-actions {
+            gap: 8px !important;
+          }
+          .navbar-user-actions .sync-btn {
+            display: none !important;
+          }
+          .navbar-user-actions > div > div:first-child {
+            display: none;
+          }
         }
       `}</style>
     </>
