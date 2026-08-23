@@ -156,8 +156,20 @@ export async function POST(req) {
 
     // 1. 질문 의도 분류
     const isRecentQuery = /최근|최신|마지막|새로운|방금|요즘|가장 최근|최근에|최신|최근 등록|최근 게시/.test(lowerQ);
-    const isMemberQuery = /위원|명단|위원장|참석|구성원|멤버|기|임기/.test(lowerQ);
+    const isMemberQuery = /위원|명단|위원장|참석|구성원|멤버|임기/.test(lowerQ);
     const isAgendaQuery = /심의|인정|불인정|보완|원료|성분|결과|안건/.test(lowerQ);
+
+    // 1-1. 회차 번호 직접 매칭 (예: "제202차", "200차", "202차")
+    const meetingNoMatch = cleanQuestion.match(/제?\s*(\d+)\s*차/);
+    let specificMeeting = null;
+    if (meetingNoMatch) {
+      const num = meetingNoMatch[1];
+      specificMeeting = await prisma.committee_meetings.findFirst({
+        where: { OR: [{ meetingNo: { contains: num } }, { title: { contains: `${num}차` } }] },
+        orderBy: { id: 'desc' },
+        include: { agendas: { select: { ingredientName: true, result: true, agendaType: true } } },
+      });
+    }
 
     // 2. 항상 포함: 최신 회의 5건 목록 (어떤 질문이든 기본 컨텍스트)
     const latestMeetings = await prisma.committee_meetings.findMany({
@@ -260,8 +272,17 @@ export async function POST(req) {
     }
 
     // 5. 컨텍스트 조합
+    const specificMeetingContext = specificMeeting
+      ? `[특정 회의 직접 조회]\n` +
+        `제목: ${specificMeeting.title}\n` +
+        `회차: ${specificMeeting.meetingNo || '-'} | 일시: ${specificMeeting.meetingDate || specificMeeting.postDate || '-'}\n` +
+        (specificMeeting.agendas.length
+          ? `심의 안건 및 결과:\n${specificMeeting.agendas.map(a => `  - ${a.ingredientName} (${a.agendaType || '신규인정'}): ${a.result}`).join('\n')}`
+          : '안건 데이터 없음')
+      : '';
+
     const contextParts = [
-      `[최신 회의 목록]\n${latestMeetingsContext}`,
+      specificMeetingContext || `[최신 회의 목록]\n${latestMeetingsContext}`,
       rawContentContext ? `[관련 회의 본문]\n${rawContentContext}` : '',
       meetingEmbedContext ? `[회의록 유사도 검색결과]\n${meetingEmbedContext}` : '',
       agendaContext ? `[심의 안건 검색결과]\n${agendaContext}` : '',
@@ -296,8 +317,15 @@ ${contextParts}
 
         try {
           for await (const chunk of resultStream) {
-            const chunkText = chunk.text;
-            if (chunkText) controller.enqueue(encoder.encode(chunkText));
+            // gemini-3.5-flash는 thinking 토큰을 스트림에 포함 → 필터링
+            const parts = chunk.candidates?.[0]?.content?.parts;
+            if (parts) {
+              for (const part of parts) {
+                if (!part.thought && part.text) controller.enqueue(encoder.encode(part.text));
+              }
+            } else if (chunk.text) {
+              controller.enqueue(encoder.encode(chunk.text));
+            }
           }
         } catch (streamErr) {
           controller.enqueue(encoder.encode(`\n[답변 스트리밍 중 오류 발생: ${streamErr.message}]`));
