@@ -191,10 +191,10 @@ export async function POST(req) {
         }).filter(m => m.score > 0.1).sort((a, b) => b.score - a.score).slice(0, 3);
 
         meetingEmbedContext = scoredMeetings.map((m, i) =>
-          `[회의자료 ${i + 1}] ${m.title} (${m.meetingNo || ''} ${m.meetingDate || m.postDate || ''})\n` +
-          (m.agendas.length ? `안건: ${m.agendas.map(a => `${a.ingredientName}(${a.result})`).join(', ')}\n` : '') +
-          (m.rawContent ? `본문: ${m.rawContent.substring(0, 800)}` : '') +
-          (m.pdfContent ? `\nPDF: ${m.pdfContent.substring(0, 400)}` : '')
+          `[회의자료 ${i + 1}] 제목: ${m.title}\n` +
+          `회차: ${m.meetingNo || '-'} | 일시: ${m.meetingDate || m.postDate || '-'}\n` +
+          (m.agendas.length ? `심의 안건 및 결과:\n${m.agendas.map(a => `  - ${a.ingredientName}: ${a.result}`).join('\n')}\n` : '') +
+          (m.pdfContent ? `PDF 요약: ${m.pdfContent.substring(0, 600)}` : '')
         ).join('\n\n');
       }
     } catch (e) { /* 회의 임베딩 검색 실패 시 무시 */ }
@@ -216,7 +216,9 @@ export async function POST(req) {
       }).catch(() => []);
 
       rawContentContext = found.map((m, i) =>
-        `[본문자료 ${i + 1}] ${m.title} (${m.meetingNo || ''} ${m.meetingDate || m.postDate || ''})\n${(m.rawContent || '').substring(0, 600)}`
+        `[본문자료 ${i + 1}] 제목: ${m.title}\n` +
+        `회차: ${m.meetingNo || '-'} | 일시: ${m.meetingDate || m.postDate || '-'}\n` +
+        `내용 요약: ${(m.rawContent || '').replace(/\n+/g, ' ').substring(0, 400)}`
       ).join('\n\n');
     }
 
