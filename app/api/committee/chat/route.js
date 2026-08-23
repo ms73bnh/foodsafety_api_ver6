@@ -267,17 +267,15 @@ export async function POST(req) {
       agendaContext ? `[심의 안건 검색결과]\n${agendaContext}` : '',
     ].filter(Boolean).join('\n\n---\n\n');
 
-    const prompt = `${systemInstruction}
-
-[참고자료]:
+    const userPrompt = `[참고자료]:
 ${contextParts}
 
 [질문]: ${cleanQuestion}
 
-위 참고자료 기반으로 핵심만 요약해서 답변하세요.`;
+위 참고자료를 바탕으로 자연스러운 한국어 문장으로 답변하세요.`;
 
-    // 5. Gemini 스트리밍 생성
-    const resultStream = await streamGeminiResponse(prompt);
+    // 5. Gemini 스트리밍 생성 (systemInstruction 분리 전달)
+    const resultStream = await streamGeminiResponse(userPrompt, systemInstruction);
 
     const encoder = new TextEncoder();
     const { remaining, isAdmin: isAdminUser } = rateCheck;
