@@ -44,7 +44,6 @@ export async function POST(req) {
     const chunks = await prisma.committee_chunks.findMany({
       where: { embedding: null },
       orderBy: { id: 'asc' },
-      skip: offset,
       take: batchSize * 2, // 청크 단위 처리 (딜레이 포함이므로 작게)
     });
 
@@ -74,7 +73,7 @@ export async function POST(req) {
     }
 
     const remaining = await prisma.committee_chunks.count({ where: { embedding: null } });
-    return NextResponse.json({ done: chunks.length < batchSize * 2, processed: chunks.length, embedded, remaining, nextOffset: offset + chunks.length, errors: errors.slice(0, 3) });
+    return NextResponse.json({ done: remaining === 0 || chunks.length < batchSize * 2, processed: chunks.length, embedded, remaining, nextOffset: 0, errors: errors.slice(0, 3) });
   }
 
   const where = mode === 'all' ? {} : { chunks: { none: {} } };
@@ -82,7 +81,7 @@ export async function POST(req) {
   const meetings = await prisma.committee_meetings.findMany({
     where,
     orderBy: { id: 'asc' },
-    skip: offset,
+    skip: mode === 'all' ? offset : 0,
     take: batchSize,
     include: {
       agendas: { select: { ingredientName: true, result: true, agendaType: true, meetingId: true } },
@@ -144,5 +143,5 @@ export async function POST(req) {
     results.push({ id: meeting.id, title: meeting.title.substring(0, 30), chunks: chunksToCreate.length, embedded: embeddedCount });
   }
 
-  return NextResponse.json({ done: meetings.length < batchSize, processed: meetings.length, nextOffset: offset + meetings.length, results });
+  return NextResponse.json({ done: meetings.length < batchSize, processed: meetings.length, nextOffset: mode === 'all' ? offset + meetings.length : 0, results });
 }

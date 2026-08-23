@@ -148,7 +148,8 @@ export async function POST(req) {
 2. 답변 형식: "~했습니다", "~입니다" 등 완성된 문장으로 작성하세요.
 3. 원료명, 회차, 일시, 심의결과(인정/불인정/보완)를 명시하세요.
 4. 참고자료에 없는 내용은 "해당 정보가 데이터에 없습니다"라고 답하세요.
-5. 500자 이내로 핵심만 작성하고, 마크다운(굵게, 목록)으로 가독성을 높이세요.
+5. 사용자가 특정 회차의 "회의 결과", "전체 결과", "요약"을 요청하면 참고자료에 있는 모든 안건을 결과별로 빠짐없이 포함하세요. 안건이 많을 때는 500자를 초과해도 됩니다.
+6. 마크다운(굵게, 목록, 표)을 사용하되, 원료명과 결과가 서로 헷갈리지 않게 간결하게 정리하세요.
 
 나쁜 예시 (하지 말것): "결과(2019.12.13) 저분자콜라겐펩타이드(기능성 추가)(제1차) 인정"
 좋은 예시: "**저분자콜라겐펩타이드**는 제174차 회의(2019.12.13)에서 기능성 추가 및 섭취량 변경 건으로 심의되어 **인정** 결정을 받았습니다."`;
@@ -308,7 +309,6 @@ export async function POST(req) {
     if (specificMeeting && specificMeeting.agendas.length > 0) {
       topMatches = specificMeeting.agendas
         .filter(a => !JUNK_KEYWORDS.some(k => a.ingredientName?.includes(k)))
-        .slice(0, 5)
         .map(a => ({ ...a, meeting: specificMeeting, score: 1 }));
     }
 
