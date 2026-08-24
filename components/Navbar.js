@@ -16,6 +16,7 @@ export default function Navbar() {
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState({ text: '', error: false });
+  const [roles, setRoles] = useState([]);
   const [menuConfig, setMenuConfig] = useState(null); // null = 아직 로딩 안됨
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const drawerRef = useRef(null);
@@ -53,8 +54,20 @@ export default function Navbar() {
         setMenuConfig(null);
       }
     };
+    const fetchRoles = async () => {
+      try {
+        const res = await fetch('/api/roles');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.roles)) {
+          setRoles(data.roles);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
     fetchMe();
     fetchMenuConfig();
+    fetchRoles();
   }, [pathname, router]);
 
   useEffect(() => {
@@ -451,9 +464,16 @@ export default function Navbar() {
                   <div>
                     <p style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a', margin: 0 }}>{user?.name}</p>
                     <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0' }}>{user?.username}</p>
-                    <span style={{ display: 'inline-block', padding: '2px 8px', background: user?.role === 'ADMIN' ? '#dbeafe' : user?.role === 'SALES' ? '#fff7ed' : '#f0fdf4', color: user?.role === 'ADMIN' ? '#1d4ed8' : user?.role === 'SALES' ? '#c2410c' : '#16a34a', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 700, marginTop: '4px' }}>
-                      {user?.role === 'ADMIN' ? '관리자' : user?.role === 'SALES' ? '영업담당자' : '일반 사용자'}
-                    </span>
+                    {(() => {
+                      const roleObj = roles.find(r => r.key === user?.role);
+                      const label = roleObj ? roleObj.label : (user?.role === 'ADMIN' ? '관리자' : user?.role === 'SALES' ? '영업담당자' : '일반 사용자');
+                      const color = roleObj?.color || (user?.role === 'ADMIN' ? '#1d4ed8' : user?.role === 'SALES' ? '#c2410c' : '#16a34a');
+                      return (
+                        <span style={{ display: 'inline-block', padding: '2px 8px', background: `${color}18`, color: color, border: `1px solid ${color}44`, borderRadius: '4px', fontSize: '0.68rem', fontWeight: 700, marginTop: '4px' }}>
+                          {label}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
                 <button onClick={() => setProfileOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer', color: '#94a3b8', padding: '4px' }}>

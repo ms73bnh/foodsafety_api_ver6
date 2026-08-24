@@ -63,6 +63,15 @@ function ManagePageInner() {
   const [chunking, setChunking] = useState(false);
   const [chunkLog, setChunkLog] = useState([]);
 
+  // 시스템 역할(권한) 관리 상태
+  const [roles, setRoles] = useState([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [editingRole, setEditingRole] = useState(null);
+  const [roleForm, setRoleForm] = useState({ key: '', label: '', description: '', color: '#6366f1', autoAddToMenus: true });
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleMsg, setRoleMsg] = useState({ text: '', error: false });
+
   // 공지사항 관리 상태
   const [notices, setNotices] = useState([]);
   const [noticesLoading, setNoticesLoading] = useState(false);
@@ -239,7 +248,7 @@ function ManagePageInner() {
     setShowNoticeForm(true);
   };
 
-  // ?�규 API ?�치 ?�수: ?�업 ?�력 로그 조회
+  // ?규 API ?치 ?수: ?업 ?력 로그 조회
   const fetchAuditLogs = async () => {
     setAuditLoading(true);
     try {
@@ -255,9 +264,105 @@ function ManagePageInner() {
     setAuditLoading(false);
   };
 
-  // 삭제변�삭제삭제�절삭제API ?�출
+  // 역할(Role) 목록 조회
+  const fetchRoles = async () => {
+    setRolesLoading(true);
+    try {
+      const res = await fetch('/api/roles');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.roles)) {
+        setRoles(data.roles);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setRolesLoading(false);
+  };
+
+  const handleOpenRoleModal = (role = null) => {
+    if (role) {
+      setEditingRole(role);
+      setRoleForm({
+        key: role.key,
+        label: role.label,
+        description: role.description || '',
+        color: role.color || '#6366f1',
+        autoAddToMenus: false
+      });
+    } else {
+      setEditingRole(null);
+      setRoleForm({
+        key: '',
+        label: '',
+        description: '',
+        color: '#6366f1',
+        autoAddToMenus: true
+      });
+    }
+    setRoleMsg({ text: '', error: false });
+    setRoleModalOpen(true);
+  };
+
+  const handleSaveRole = async () => {
+    if (!roleForm.label?.trim()) {
+      return setRoleMsg({ text: '권한명을 입력해주세요.', error: true });
+    }
+    setRoleSaving(true);
+    setRoleMsg({ text: '', error: false });
+    try {
+      const method = editingRole ? 'PUT' : 'POST';
+      const res = await fetch('/api/roles', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(roleForm)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRoleModalOpen(false);
+        fetchRoles();
+        fetch('/api/menu-visibility').then(r => r.json()).then(d => setMenuConfig(d.config || [])).catch(() => {});
+        alert(editingRole ? '권한 정보가 수정되었습니다.' : '새 권한이 성공적으로 생성되었습니다.');
+      } else {
+        setRoleMsg({ text: data.error || '저장 실패', error: true });
+      }
+    } catch (e) {
+      setRoleMsg({ text: '오류가 발생했습니다: ' + e.message, error: true });
+    }
+    setRoleSaving(false);
+  };
+
+  const handleDeleteRole = async (role) => {
+    if (role.isSystem || ['ADMIN', 'SALES', 'USER'].includes(role.key)) {
+      return alert('시스템 기본 권한은 삭제할 수 없습니다.');
+    }
+    const confirmMsg = role.userCount > 0
+      ? `"${role.label}(${role.key})" 권한을 삭제하시겠습니까?\n현재 이 권한을 가진 사용자 ${role.userCount}명은 기본 'USER (일반)' 권한으로 자동 변경됩니다.`
+      : `"${role.label}(${role.key})" 권한을 삭제하시겠습니까?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const res = await fetch(`/api/roles?key=${role.key}&fallbackRole=USER`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('권한이 삭제되었습니다.');
+        fetchRoles();
+        fetchUsers();
+        fetch('/api/menu-visibility').then(r => r.json()).then(d => setMenuConfig(d.config || [])).catch(() => {});
+      } else {
+        alert(data.error || '삭제 처리 중 오류가 발생했습니다.');
+      }
+    } catch (e) {
+      alert('오류 발생: ' + e.message);
+    }
+  };
+
+  // 삭제변삭제삭제절삭제API ?출
   useEffect(() => {
     if (pageLoading) return;
+    fetchRoles(); // 항상 기본적으로 역할 목록은 로드
     if (activeTab === 'sync') {
       fetchLogs();
     } else if (activeTab === 'banner') {
@@ -275,7 +380,7 @@ function ManagePageInner() {
     }
   }, [activeTab, pageLoading, auditPage, auditActionFilter]);
 
-  // RAW ?�이삭제변�?감시
+  // RAW ?이삭제변?감시
   useEffect(() => {
     if (pageLoading) return;
     if (activeTab === 'raw') fetchRawData();
@@ -899,7 +1004,6 @@ function ManagePageInner() {
       {activeTab === 'users' && (
          <div className="animate-fade-in">
 
-            {/* ?�?�?� ?�용삭제?�보 ?�정 모달 ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?� */}
             {editingUser && (
                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', width: '520px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -915,7 +1019,6 @@ function ManagePageInner() {
                         </button>
                      </div>
 
-                     {/* 삭제?�드삭제*/}
                      {[
                         { label: '이름', key: 'name', placeholder: '홍길동' },
                         { label: '회사명', key: 'companyNm', placeholder: '(주)식품회사' },
@@ -1505,53 +1608,318 @@ function ManagePageInner() {
 
       {activeTab === 'menu' && (
         <div className="animate-fade-in">
-          {/* 메뉴 노출 설정 */}
+
+          {/* 역할(Role) 추가 / 수정 모달 */}
+          {roleModalOpen && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ background: '#fff', borderRadius: '16px', padding: '28px', width: '480px', maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', animation: 'scaleIn 0.2s ease' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h3 style={{ margin: 0, color: 'var(--text-color)', fontSize: '1.15rem' }}>
+                    <i className="fa-solid fa-shield-halved" style={{ marginRight: '8px', color: '#6366f1' }}></i>
+                    {editingRole ? '권한 정보 수정' : '새 시스템 권한 생성'}
+                  </h3>
+                  <button onClick={() => setRoleModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer', color: '#94a3b8' }}>
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+                    권한명 (한글) <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="예: 소재개발연구원, 품질관리팀, 기획자"
+                    value={roleForm.label}
+                    onChange={e => {
+                      const val = e.target.value;
+                      // 신규 등록 시 영문 코드가 비어있거나 자동 생성 중일 때 보조 힌트
+                      setRoleForm(prev => ({
+                        ...prev,
+                        label: val,
+                        key: !editingRole && (!prev.key || prev.key.startsWith('ROLE_')) ? `ROLE_${val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || ''}` : prev.key
+                      }));
+                    }}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+                    권한 코드 (영문 대문자) <span style={{ color: '#ef4444' }}>*</span>
+                    {editingRole && <span style={{ fontSize: '0.72rem', color: '#94a3b8', marginLeft: '6px' }}>(수정 불가)</span>}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="예: RESEARCHER, QC_MANAGER"
+                    value={roleForm.key}
+                    disabled={!!editingRole}
+                    onChange={e => setRoleForm({ ...roleForm, key: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_') })}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.9rem', background: editingRole ? '#f1f5f9' : '#fff', boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }}
+                  />
+                  {!editingRole && (
+                    <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>
+                      시스템 내부 식별자로 사용됩니다. (영문 대문자, 숫자, 언더스코어)
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+                    배지 색상
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>
+                    {['#1d4ed8', '#0284c7', '#0d9488', '#16a34a', '#c2410c', '#dc2626', '#7c3aed', '#db2777', '#475569'].map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setRoleForm({ ...roleForm, color: c })}
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          borderRadius: '50%',
+                          backgroundColor: c,
+                          border: roleForm.color === c ? '3px solid #0f172a' : '2px solid #fff',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={roleForm.color}
+                      onChange={e => setRoleForm({ ...roleForm, color: e.target.value })}
+                      style={{ width: '32px', height: '28px', padding: 0, border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer' }}
+                    />
+                  </div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '6px', backgroundColor: `${roleForm.color}18`, color: roleForm.color, border: `1px solid ${roleForm.color}55`, fontSize: '0.75rem', fontWeight: 700 }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: roleForm.color }}></span>
+                    미리보기: {roleForm.label || '권한명'} ({roleForm.key || 'CODE'})
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+                    권한 설명 (용도/업무)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="해당 권한의 대상 및 접근 범위에 대한 설명을 작성하세요."
+                    value={roleForm.description}
+                    onChange={e => setRoleForm({ ...roleForm, description: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.85rem', boxSizing: 'border-box', resize: 'vertical' }}
+                  />
+                </div>
+
+                {!editingRole && (
+                  <div style={{ marginBottom: '20px', padding: '10px 12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#334155', cursor: 'pointer', margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={roleForm.autoAddToMenus}
+                        onChange={e => setRoleForm({ ...roleForm, autoAddToMenus: e.target.checked })}
+                        style={{ width: '16px', height: '16px', accentColor: '#6366f1' }}
+                      />
+                      <span>생성 시 현재 활성화된 모든 메뉴 노출 권한에 기본 포함</span>
+                    </label>
+                  </div>
+                )}
+
+                {roleMsg.text && (
+                  <div style={{ marginBottom: '16px', padding: '10px 14px', background: roleMsg.error ? '#fef2f2' : '#f0fdf4', border: `1px solid ${roleMsg.error ? '#fca5a5' : '#86efac'}`, borderRadius: '8px', fontSize: '0.82rem', color: roleMsg.error ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
+                    {roleMsg.text}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={() => setRoleModalOpen(false)} style={{ flex: 1, padding: '10px', background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}>
+                    취소
+                  </button>
+                  <button
+                    onClick={handleSaveRole}
+                    disabled={roleSaving}
+                    style={{ flex: 2, padding: '10px', background: 'linear-gradient(135deg, #6366f1, #0284c7)', color: '#fff', border: 'none', borderRadius: '8px', cursor: roleSaving ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: '0.88rem', opacity: roleSaving ? 0.7 : 1 }}
+                  >
+                    {roleSaving ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>저장 중...</> : <><i className="fa-solid fa-check" style={{ marginRight: '6px' }}></i>{editingRole ? '수정 완료' : '권한 생성하기'}</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 1. 시스템 역할(권한) 관리 섹션 */}
           <div className="glass-panel" style={{ marginBottom: '24px' }}>
-            <h3 style={{ color: 'var(--text-color)', margin: '0 0 6px' }}>
-              <i className="fa-solid fa-eye" style={{ marginRight: '8px', color: '#0284c7' }}></i>메뉴 노출 & 권한 설정
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ color: 'var(--text-color)', margin: '0 0 4px', fontSize: '1.15rem' }}>
+                  <i className="fa-solid fa-user-shield" style={{ marginRight: '8px', color: '#6366f1' }}></i>
+                  1. 시스템 역할(권한) 관리
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
+                  소재개발연구원, 품질관리팀 등 필요한 권한을 자유롭게 추가하고 관리할 수 있습니다.
+                </p>
+              </div>
+              <button
+                onClick={() => handleOpenRoleModal(null)}
+                style={{
+                  padding: '9px 18px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '0.84rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 6px rgba(99,102,241,0.25)'
+                }}
+              >
+                <i className="fa-solid fa-plus"></i> 새 권한 생성
+              </button>
+            </div>
+
+            {rolesLoading ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                <i className="fa-solid fa-spinner fa-spin fa-xl"></i>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                {roles.map(r => (
+                  <div
+                    key={r.key}
+                    style={{
+                      background: '#fff',
+                      border: `1px solid ${r.color || '#e2e8f0'}33`,
+                      borderLeft: `4px solid ${r.color || '#6366f1'}`,
+                      borderRadius: '10px',
+                      padding: '16px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.98rem', color: '#0f172a' }}>{r.label}</span>
+                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: `${r.color || '#6366f1'}15`, color: r.color || '#6366f1', fontWeight: 700, fontFamily: 'monospace' }}>
+                              {r.key}
+                            </span>
+                          </div>
+                        </div>
+                        {r.isSystem ? (
+                          <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: '#f1f5f9', color: '#64748b', fontWeight: 600 }}>
+                            시스템 기본
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: '#eef2ff', color: '#6366f1', fontWeight: 600 }}>
+                            사용자 정의
+                          </span>
+                        )}
+                      </div>
+
+                      <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 12px', minHeight: '32px', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                        {r.description || '별도 설명 없음'}
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#475569', fontWeight: 600 }}>
+                        <i className="fa-solid fa-users" style={{ marginRight: '5px', color: '#94a3b8' }}></i>
+                        사용자 <strong>{r.userCount ?? 0}</strong>명
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          onClick={() => handleOpenRoleModal(r)}
+                          style={{ padding: '5px 10px', fontSize: '0.74rem', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                          title="권한 정보 수정"
+                        >
+                          <i className="fa-solid fa-pen"></i> 수정
+                        </button>
+                        {!r.isSystem && !['ADMIN', 'SALES', 'USER'].includes(r.key) && (
+                          <button
+                            onClick={() => handleDeleteRole(r)}
+                            style={{ padding: '5px 10px', fontSize: '0.74rem', background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                            title="권한 삭제"
+                          >
+                            <i className="fa-solid fa-trash-can"></i> 삭제
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 2. 메뉴 노출 & 권한 설정 */}
+          <div className="glass-panel" style={{ marginBottom: '24px' }}>
+            <h3 style={{ color: 'var(--text-color)', margin: '0 0 6px', fontSize: '1.15rem' }}>
+              <i className="fa-solid fa-eye" style={{ marginRight: '8px', color: '#0284c7' }}></i>
+              2. 메뉴 노출 & 권한 설정
             </h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>
-              체크 해제된 메뉴는 해당 권한의 사용자에게 표시되지 않습니다. 저장 즉시 반영됩니다.
+              체크 해제된 메뉴는 해당 권한의 사용자에게 표시되지 않습니다. 위에서 생성된 모든 역할이 컬럼으로 자동 노출됩니다.
             </p>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>메뉴</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>활성화</th>
-                  {['ADMIN', 'SALES', 'USER'].map(r => (
-                    <th key={r} style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: r === 'ADMIN' ? '#1d4ed8' : r === 'SALES' ? '#c2410c' : '#16a34a', fontWeight: 600 }}>
-                      {r === 'ADMIN' ? '관리자' : r === 'SALES' ? '영업' : '일반'}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {menuConfig.map(item => (
-                  <tr key={item.key} style={{ borderBottom: '1px solid #f1f5f9', opacity: item.enabled ? 1 : 0.55 }}>
-                    <td style={{ padding: '9px 12px' }}>
-                      {item.group && <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginRight: '6px' }}>└</span>}
-                      <span style={{ fontWeight: item.group ? 400 : 600 }}>{item.label}</span>
-                      <span style={{ fontSize: '0.68rem', color: '#94a3b8', marginLeft: '6px' }}>{item.path}</span>
-                    </td>
-                    <td style={{ padding: '9px 12px', textAlign: 'center' }}>
-                      <input type="checkbox" checked={item.enabled} onChange={() => setMenuConfig(prev => prev.map(m => m.key === item.key ? { ...m, enabled: !m.enabled } : m))} style={{ width: '17px', height: '17px', cursor: 'pointer', accentColor: '#0284c7' }} />
-                    </td>
-                    {['ADMIN', 'SALES', 'USER'].map(role => (
-                      <td key={role} style={{ padding: '9px 12px', textAlign: 'center' }}>
-                        <input type="checkbox" checked={item.visibleTo.includes(role)} disabled={!item.enabled}
-                          onChange={() => setMenuConfig(prev => prev.map(m => {
-                            if (m.key !== item.key) return m;
-                            const vt = m.visibleTo.includes(role) ? m.visibleTo.filter(r => r !== role) : [...m.visibleTo, role];
-                            return { ...m, visibleTo: vt };
-                          }))}
-                          style={{ width: '16px', height: '16px', cursor: item.enabled ? 'pointer' : 'default', accentColor: role === 'ADMIN' ? '#1d4ed8' : role === 'SALES' ? '#c2410c' : '#16a34a' }}
-                        />
-                      </td>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th style={{ padding: '12px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 700, minWidth: '220px' }}>메뉴</th>
+                    <th style={{ padding: '12px 10px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 700, width: '70px' }}>활성화</th>
+                    {roles.map(r => (
+                      <th key={r.key} style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: r.color || '#475569', fontWeight: 700, minWidth: '90px' }}>
+                        <div>{r.label}</div>
+                        <div style={{ fontSize: '0.68rem', fontWeight: 500, opacity: 0.75, fontFamily: 'monospace' }}>({r.key})</div>
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {menuConfig.map(item => (
+                    <tr key={item.key} style={{ borderBottom: '1px solid #f1f5f9', opacity: item.enabled ? 1 : 0.55 }}>
+                      <td style={{ padding: '10px 14px' }}>
+                        {item.group && <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginRight: '6px' }}>└</span>}
+                        <span style={{ fontWeight: item.group ? 400 : 600 }}>{item.label}</span>
+                        <span style={{ fontSize: '0.68rem', color: '#94a3b8', marginLeft: '6px' }}>{item.path}</span>
+                      </td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={item.enabled}
+                          onChange={() => setMenuConfig(prev => prev.map(m => m.key === item.key ? { ...m, enabled: !m.enabled } : m))}
+                          style={{ width: '17px', height: '17px', cursor: 'pointer', accentColor: '#0284c7' }}
+                        />
+                      </td>
+                      {roles.map(role => (
+                        <td key={role.key} style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={item.visibleTo?.includes(role.key)}
+                            disabled={!item.enabled}
+                            onChange={() => setMenuConfig(prev => prev.map(m => {
+                              if (m.key !== item.key) return m;
+                              const currentVt = m.visibleTo || [];
+                              const vt = currentVt.includes(role.key)
+                                ? currentVt.filter(r => r !== role.key)
+                                : [...currentVt, role.key];
+                              return { ...m, visibleTo: vt };
+                            }))}
+                            style={{ width: '16px', height: '16px', cursor: item.enabled ? 'pointer' : 'default', accentColor: role.color || '#0284c7' }}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
             {menuMsg.text && (
               <div style={{ marginTop: '14px', padding: '10px 14px', background: menuMsg.error ? '#fef2f2' : '#f0fdf4', border: `1px solid ${menuMsg.error ? '#fca5a5' : '#86efac'}`, borderRadius: '8px', fontSize: '0.82rem', color: menuMsg.error ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
                 {menuMsg.text}
@@ -1559,6 +1927,7 @@ function ManagePageInner() {
             )}
             <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
               <button onClick={async () => {
+                if (!confirm('메뉴 노출 설정을 기본값으로 초기화하시겠습니까?')) return;
                 const res = await fetch('/api/menu-visibility', { method: 'DELETE' });
                 const json = await res.json();
                 if (json.config) { setMenuConfig(json.config); setMenuMsg({ text: '기본값으로 초기화되었습니다.', error: false }); }

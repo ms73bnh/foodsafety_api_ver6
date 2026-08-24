@@ -4,14 +4,17 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-const ROLES = ['ADMIN', 'SALES', 'USER'];
-const ROLE_LABELS = { ADMIN: '관리자', SALES: '영업담당자', USER: '일반사용자' };
-const ROLE_COLORS = { ADMIN: '#1d4ed8', SALES: '#c2410c', USER: '#16a34a' };
+const DEFAULT_ROLES = [
+  { key: 'ADMIN', label: '관리자', color: '#1d4ed8' },
+  { key: 'SALES', label: '영업담당자', color: '#c2410c' },
+  { key: 'USER', label: '일반사용자', color: '#16a34a' }
+];
 
 export default function MenuManagePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [roles, setRoles] = useState(DEFAULT_ROLES);
   const [config, setConfig] = useState([]);
   const [msg, setMsg] = useState({ text: '', error: false });
   const [rebuildStatus, setRebuildStatus] = useState(null);
@@ -22,6 +25,10 @@ export default function MenuManagePage() {
     const init = async () => {
       const me = await fetch('/api/auth/me').then(r => r.json()).catch(() => ({}));
       if (!me.success || me.user?.role !== 'ADMIN') { router.push('/'); return; }
+      const rolesRes = await fetch('/api/roles').then(r => r.json()).catch(() => ({ roles: DEFAULT_ROLES }));
+      if (rolesRes.success && Array.isArray(rolesRes.roles)) {
+        setRoles(rolesRes.roles);
+      }
       const menuRes = await fetch('/api/menu-visibility').then(r => r.json()).catch(() => ({ config: [] }));
       setConfig(menuRes.config || []);
       const status = await fetch('/api/committee/rebuild').then(r => r.json()).catch(() => null);
@@ -148,8 +155,11 @@ export default function MenuManagePage() {
             <tr style={{ background: '#f8fafc' }}>
               <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>메뉴</th>
               <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>활성화</th>
-              {ROLES.map(r => (
-                <th key={r} style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: ROLE_COLORS[r], fontWeight: 600 }}>{ROLE_LABELS[r]}</th>
+              {roles.map(r => (
+                <th key={r.key} style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', color: r.color || '#64748b', fontWeight: 600 }}>
+                  {r.label}
+                  <div style={{ fontSize: '0.68rem', fontWeight: 400, opacity: 0.8 }}>({r.key})</div>
+                </th>
               ))}
             </tr>
           </thead>
@@ -171,14 +181,14 @@ export default function MenuManagePage() {
                     />
                   </label>
                 </td>
-                {ROLES.map(role => (
-                  <td key={role} style={{ padding: '10px 12px', textAlign: 'center' }}>
+                {roles.map(role => (
+                  <td key={role.key} style={{ padding: '10px 12px', textAlign: 'center' }}>
                     <input
                       type="checkbox"
-                      checked={item.visibleTo.includes(role)}
+                      checked={item.visibleTo?.includes(role.key)}
                       disabled={!item.enabled}
-                      onChange={() => toggleRole(item.key, role)}
-                      style={{ width: '16px', height: '16px', cursor: item.enabled ? 'pointer' : 'default', accentColor: ROLE_COLORS[role] }}
+                      onChange={() => toggleRole(item.key, role.key)}
+                      style={{ width: '16px', height: '16px', cursor: item.enabled ? 'pointer' : 'default', accentColor: role.color || '#0284c7' }}
                     />
                   </td>
                 ))}
