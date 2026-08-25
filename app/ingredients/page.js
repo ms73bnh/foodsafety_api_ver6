@@ -645,6 +645,7 @@ export default function IngredientsPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   {historyLogs.map((log) => {
                     const isCreated = log.type && log.type.includes("CREATED");
+                    const isDeleted = log.type && log.type.includes("DELETED");
                     const name = log.details?.name || log.prdlstReportNo;
                     const recogNo = log.details?.recogNo || log.prdlstReportNo;
 
@@ -653,12 +654,12 @@ export default function IngredientsPage() {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12, flexWrap: "nowrap" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                             <span style={{
-                              background: isCreated ? "#dcfce7" : "#dbeafe",
-                              color: isCreated ? "#15803d" : "#1d4ed8",
+                              background: isCreated ? "#dcfce7" : isDeleted ? "#fee2e2" : "#dbeafe",
+                              color: isCreated ? "#15803d" : isDeleted ? "#b91c1c" : "#1d4ed8",
                               padding: "3px 10px", borderRadius: 6, fontSize: "0.74rem", fontWeight: 800,
                               whiteSpace: "nowrap", flexShrink: 0
                             }}>
-                              {isCreated ? "신규 등록" : "항목 변경"}
+                              {isCreated ? "신규 등록" : isDeleted ? "공시 제외(고시전환/취하)" : "항목 변경"}
                             </span>
                             <strong style={{ fontSize: "0.95rem", color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                               {name}
@@ -671,6 +672,14 @@ export default function IngredientsPage() {
                             {new Date(log.loggedAt).toLocaleString("ko-KR")}
                           </span>
                         </div>
+
+                        {/* 공시 제외(삭제) 요약 */}
+                        {isDeleted && log.details && (
+                          <div style={{ fontSize: "0.82rem", color: "#991b1b", background: "#fef2f2", padding: "10px 14px", borderRadius: 8, border: "1px solid #fee2e2", lineHeight: 1.5 }}>
+                            <div><strong>사유:</strong> {log.details.action || "식약처 개별인정원료 공시 목록에서 제외됨 (기능성 고시형 원료 전환 또는 인정 취하)"}</div>
+                            {log.details.company && <div style={{ fontSize: "0.78rem", color: "#7f1d1d", marginTop: 4 }}>기존 업체: {log.details.company} | 최초 등록일: {log.details.registeredDate || '-'}</div>}
+                          </div>
+                        )}
 
                         {/* 신규 등록 요약 */}
                         {isCreated && log.details && (

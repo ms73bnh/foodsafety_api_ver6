@@ -78,19 +78,49 @@ function parseDetailHtml(html = '') {
   return { fnText, dailyIntake, precautions, rawText: text.trim() };
 }
 
+/**
+ * parseFskTitle: 식약처 게시물 제목에서 원료명, 업체명, 인정번호를 파싱
+ * 예: "N-아세틸글루코사민(CJ제일제당(주), 제2008-2호)"
+ *     "타마린드강황주정추출복합물(TamaFlexⓇ)(콜마비앤에이치(주), 2024-12호)"
+ */
+function parseFskTitle(title = '') {
+  let ingrName = title.trim();
+  let companyNm = '';
+  let recogNo = '';
+
+  // 가장 마지막 괄호 그룹에서 업체명+인정번호 추출
+  const m = ingrName.match(/^(.*)\(([^)]+)\)$/);
+  if (m) {
+    ingrName = m[1].trim();
+    const inside = m[2].trim();
+    const parts = inside.split(',').map(s => s.trim());
+    const recogParts = parts.filter(p => /^제?\s*\d{4}\s*-\s*\d+\s*호/.test(p));
+    const companyParts = parts.filter(p => !/^제?\s*\d{4}\s*-\s*\d+\s*호/.test(p));
+    if (recogParts.length > 0) {
+      recogNo = recogParts.map(r => r.replace(/\s+/g, '')).join(', ');
+      companyNm = companyParts.join(', ').trim();
+    } else {
+      companyNm = inside;
+    }
+  }
+
+  // 괄호 없이 제목에 바로 인정번호가 있는 경우 fallback
+  if (!recogNo) {
+    const rm = title.match(/제\s*\d{4}\s*-\s*\d+\s*호/);
+    if (rm) recogNo = rm[0].replace(/\s+/g, '');
+  }
+
+  // '2024-12호' → '제2024-12호' 정규화
+  recogNo = recogNo.replace(/(?<![^\s,])(\d{4}-\d+호)/g, '제$1').replace(/\s+/g, '').trim();
+
+  return { ingrName, companyNm, recogNo };
+}
+
 export async function POST(req) {
   try {
     const BASE_URL = 'https://www.foodsafetykorea.go.kr';
     const LIST_AJAX = `${BASE_URL}/portal/board/boardList.do`;
     const DETAIL_URL = `${BASE_URL}/portal/board/boardDetail.do`;
-
-    const BASE_PARAMS = {
-      menu_no: '2660',
-      menu_grp: 'MENU_NEW01',
-      bbs_no: 'bbs987',
-      ctgry_no: '1207',
-      ctgry_type_cd: 'CTG_TYPE01',
-    };
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
@@ -99,54 +129,86 @@ export async function POST(req) {
       'Content-Type': 'application/x-www-form-urlencoded',
     };
 
-    // 최신 공시 50건 조회
-    const body = new URLSearchParams({ ...BASE_PARAMS, start_idx: '1', show_cnt: '50' });
-    const resp = await fetch(LIST_AJAX, { method: 'POST', headers, body: body.toString() });
-    if (!resp.ok) throw new Error('식약처 API 응답 오류');
-    const json = await resp.json();
-    const items = json.list || [];
+    // ────────────────────────────────────────────────────────────
+    // STEP 1: 식약처 전체 공시 목록 수집 (전 페이지 순회)
+    // ────────────────────────────────────────────────────────────
+    let allFskItems = [];
+    let page = 1;
+    const showCnt = 50;
+
+    while (true) {
+      const body = new URLSearchParams({
+        menu_no: '2660',
+        menu_grp: 'MENU_NEW01',
+        bbs_no: 'bbs987',
+        ctgry_no: '1207',
+        ctgry_type_cd: 'CTG_TYPE01',
+        start_idx: String(page),
+        show_cnt: String(showCnt),
+      });
+
+      const resp = await fetch(LIST_AJAX, { method: 'POST', headers, body: body.toString() });
+      if (!resp.ok) throw new Error(`식약처 API 응답 오류 (page ${page}): ${resp.status}`);
+      const json = await resp.json();
+      const items = json.list || [];
+      if (items.length === 0) break;
+
+      allFskItems = allFskItems.concat(items);
+      const totalCnt = parseInt(json.total_cnt || '0', 10);
+      if (allFskItems.length >= totalCnt) break;
+      page++;
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // STEP 2: 인정번호 기준으로 FSK 맵 구성
+    // ────────────────────────────────────────────────────────────
+    const fskMap = new Map(); // recognitionNumber → parsed item
+    const fskRecogSet = new Set();
+
+    for (const item of allFskItems) {
+      const { ingrName, companyNm, recogNo } = parseFskTitle(item.titl);
+      if (!recogNo) continue;
+      fskRecogSet.add(recogNo);
+      if (!fskMap.has(recogNo)) {
+        fskMap.set(recogNo, {
+          name: ingrName,
+          company: companyNm,
+          recogNo,
+          regDate: (item.cret_dtm || '').substring(0, 10),
+          functionalityText: (item.cntnts || item.fnclty_cntnts || '').trim(),
+          ntctxtNo: String(item.ntctxt_no || ''),
+        });
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // STEP 3: 현재 DB 전체 조회
+    // ────────────────────────────────────────────────────────────
+    const currentDbItems = await prisma.individual_raw_materials.findMany();
+    const dbRecogMap = new Map(currentDbItems.map(d => [d.recognitionNumber, d]));
 
     let addedCount = 0;
     let updatedCount = 0;
+    let deletedCount = 0;
     const changeDetails = [];
 
-    for (const item of items) {
-      const title = (item.titl || '').trim();
-      const ntctxtNo = String(item.ntctxt_no || '');
-      if (!title) continue;
-
-      let companyNm = '';
-      let recogNo = '';
-      let ingrName = title;
-
-      // 제목 패턴: 원료명 (업체명, 인정번호)
-      const m = title.match(/^(.*?)(?:\s*\(\s*([^,\(\)]+?)\s*,\s*([^\)]+)\s*\))?$/);
-      if (m && m[2] && m[3]) {
-        ingrName = m[1].trim();
-        companyNm = m[2].trim();
-        recogNo = m[3].trim();
-      } else {
-        const recogMatch = title.match(/제\s*\d{4}\s*-\s*\d+\s*호/);
-        if (recogMatch) recogNo = recogMatch[0].replace(/\s+/g, '');
-      }
-
-      if (!recogNo) continue;
-
-      const regDate = (item.cret_dtm || '').substring(0, 10);
-      let functionalityText = (item.cntnts || item.fnclty_cntnts || '').trim();
+    // ────────────────────────────────────────────────────────────
+    // STEP 4: FSK 기준으로 신규 추가 / 기존 업데이트
+    // ────────────────────────────────────────────────────────────
+    for (const [recogNo, fskItem] of fskMap.entries()) {
+      let functionalityText = fskItem.functionalityText;
       let dailyIntake = '';
       let precautions = '';
       let detailContent = '';
 
-      // 상세 페이지 호출하여 본문 파싱 (기능성, 일일섭취량, 주의사항)
-      if (ntctxtNo) {
+      const existing = dbRecogMap.get(recogNo);
+
+      // 신규이거나 기능성이 없는 경우에만 상세 페이지 호출
+      if (fskItem.ntctxtNo && (!existing || !existing.functionalityText || !functionalityText)) {
         try {
-          const detUrl = `${DETAIL_URL}?ntctxt_no=${ntctxtNo}&menu_no=2660&menu_grp=MENU_NEW01&bbs_no=bbs987`;
+          const detUrl = `${DETAIL_URL}?ntctxt_no=${fskItem.ntctxtNo}&menu_no=2660&menu_grp=MENU_NEW01&bbs_no=bbs987`;
           const detResp = await fetch(detUrl, {
-            headers: {
-              'User-Agent': headers['User-Agent'],
-              'Referer': headers['Referer']
-            }
+            headers: { 'User-Agent': headers['User-Agent'], 'Referer': headers['Referer'] }
           });
           if (detResp.ok) {
             const detHtml = await detResp.text();
@@ -157,28 +219,23 @@ export async function POST(req) {
             detailContent = parsed.rawText.substring(0, 2000);
           }
         } catch (detailErr) {
-          console.error(`Detail fetch error for ${ntctxtNo}:`, detailErr);
+          console.error(`Detail fetch error for ${recogNo}:`, detailErr);
         }
       }
 
-      // 기존 DB 조회
-      const existing = await prisma.individual_raw_materials.findUnique({
-        where: { recognitionNumber: recogNo }
-      });
-
       if (!existing) {
-        // 신규 등록
-        const categories = autoClassify(functionalityText, ingrName);
+        // ── 신규 등록 ──
+        const categories = autoClassify(functionalityText, fskItem.name);
         await prisma.individual_raw_materials.create({
           data: {
             recognitionNumber: recogNo,
-            name: ingrName,
-            company: companyNm,
+            name: fskItem.name,
+            company: fskItem.company || '',
             functionalityText: functionalityText || null,
             dailyIntake: dailyIntake || null,
             precautions: precautions || null,
             detailContent: detailContent || null,
-            registeredDate: regDate,
+            registeredDate: fskItem.regDate,
             categories,
           }
         });
@@ -188,55 +245,47 @@ export async function POST(req) {
             prdlstReportNo: recogNo,
             type: 'INGREDIENT_CREATED',
             changes: JSON.stringify({
-              name: ingrName,
-              company: companyNm,
+              name: fskItem.name,
+              company: fskItem.company,
               recogNo,
-              registeredDate: regDate,
+              registeredDate: fskItem.regDate,
               functionalityText,
               dailyIntake,
               precautions,
-              action: '신규 개별인정원료 공시 등록'
+              action: '신규 개별인정원료 공시 등록',
             })
           }
         });
 
         addedCount++;
-        changeDetails.push({ recogNo, name: ingrName, type: '신규 등록' });
+        changeDetails.push({ recogNo, name: fskItem.name, type: '신규 등록' });
       } else {
-        // 기존 원료 변경 사항 비교 (정규화 비교로 단순 괄호/공백 차이 무시)
+        // ── 변경 감지 및 업데이트 ──
         const changedFields = [];
         const before = {};
         const after = {};
 
-        // 업체명 비교
-        if (companyNm && existing.company && !isContentEqual(existing.company, companyNm)) {
+        if (fskItem.company && existing.company && !isContentEqual(existing.company, fskItem.company)) {
           changedFields.push('업체명');
           before.company = existing.company;
-          after.company = companyNm;
+          after.company = fskItem.company;
         }
-
-        // 기능성 내용 비교
         if (functionalityText && existing.functionalityText && !isContentEqual(existing.functionalityText, functionalityText)) {
           changedFields.push('기능성 내용');
           before.functionalityText = existing.functionalityText;
           after.functionalityText = functionalityText;
         }
-
-        // 일일섭취량 비교
         if (dailyIntake && existing.dailyIntake && !isContentEqual(existing.dailyIntake, dailyIntake)) {
           changedFields.push('일일섭취량');
           before.dailyIntake = existing.dailyIntake;
           after.dailyIntake = dailyIntake;
         }
-
-        // 섭취시 주의사항 비교
         if (precautions && existing.precautions && !isContentEqual(existing.precautions, precautions)) {
           changedFields.push('섭취시 주의사항');
           before.precautions = existing.precautions;
           after.precautions = precautions;
         }
 
-        // 기존에 비어있던 필드 채우기 or 실제 변경 업데이트
         const needUpdate = changedFields.length > 0 ||
           (!existing.dailyIntake && dailyIntake) ||
           (!existing.precautions && precautions) ||
@@ -244,14 +293,14 @@ export async function POST(req) {
 
         if (needUpdate) {
           await prisma.individual_raw_materials.update({
-            where: { recognitionNumber: recogNo },
+            where: { id: existing.id },
             data: {
-              company: companyNm || existing.company,
+              company: fskItem.company || existing.company,
               functionalityText: functionalityText || existing.functionalityText,
               dailyIntake: dailyIntake || existing.dailyIntake,
               precautions: precautions || existing.precautions,
               detailContent: detailContent || existing.detailContent,
-              categories: autoClassify(functionalityText || existing.functionalityText, existing.name || ingrName),
+              categories: autoClassify(functionalityText || existing.functionalityText, existing.name || fskItem.name),
             }
           });
 
@@ -261,16 +310,15 @@ export async function POST(req) {
                 prdlstReportNo: recogNo,
                 type: 'INGREDIENT_UPDATED',
                 changes: JSON.stringify({
-                  name: existing.name || ingrName,
+                  name: existing.name || fskItem.name,
                   recogNo,
                   changedFields,
                   before,
                   after,
-                  action: '개별인정원료 항목 변경'
+                  action: '개별인정원료 항목 변경',
                 })
               }
             });
-
             updatedCount++;
             changeDetails.push({ recogNo, name: existing.name, type: '항목 수정', changedFields });
           }
@@ -278,14 +326,47 @@ export async function POST(req) {
       }
     }
 
+    // ────────────────────────────────────────────────────────────
+    // STEP 5: DB에 있으나 FSK에 없는 항목 삭제 (고시형 전환 / 취하 원료)
+    // ────────────────────────────────────────────────────────────
+    for (const dbItem of currentDbItems) {
+      if (!fskRecogSet.has(dbItem.recognitionNumber)) {
+        await prisma.change_log.create({
+          data: {
+            prdlstReportNo: dbItem.recognitionNumber,
+            type: 'INGREDIENT_DELETED',
+            changes: JSON.stringify({
+              name: dbItem.name,
+              company: dbItem.company,
+              recogNo: dbItem.recognitionNumber,
+              registeredDate: dbItem.registeredDate,
+              functionalityText: dbItem.functionalityText,
+              categories: dbItem.categories,
+              action: '식약처 개별인정원료 공시 목록에서 제외 (고시형 기능성 원료 전환 또는 인정 취하)',
+              syncedAt: new Date().toISOString(),
+            })
+          }
+        });
+
+        await prisma.individual_raw_materials.delete({
+          where: { id: dbItem.id }
+        });
+
+        deletedCount++;
+        changeDetails.push({ recogNo: dbItem.recognitionNumber, name: dbItem.name, type: '고시형 전환/취하 (삭제)' });
+      }
+    }
+
     const total = await prisma.individual_raw_materials.count();
 
     return NextResponse.json({
       success: true,
-      message: `개별인정형 원료 동기화 완료: ${addedCount}건 신규 등록, ${updatedCount}건 변경 반영 (총 ${total}건)`,
+      message: `개별인정형 원료 1:1 동기화 완료 — 신규 ${addedCount}건, 수정 ${updatedCount}건, 삭제 ${deletedCount}건 (고시형 전환/취하) | 최종 DB: ${total}건 / 식약처 공시: ${fskMap.size}건`,
       addedCount,
       updatedCount,
+      deletedCount,
       total,
+      fskTotal: fskMap.size,
       changeDetails,
     });
   } catch (error) {
