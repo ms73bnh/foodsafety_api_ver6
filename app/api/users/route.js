@@ -24,6 +24,8 @@ export async function GET(req) {
         titleNm: true,
         role: true,
         isApproved: true,
+        dailyChatLimit: true,
+        dailyChatCount: true,
         createdAt: true
       }
     });

@@ -4,6 +4,12 @@ import { useState, useEffect, Suspense } from 'react';
 import RichTextEditor from '@/components/RichTextEditor';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+const DEFAULT_ROLES = [
+  { key: 'ADMIN', label: '관리자', color: '#1d4ed8' },
+  { key: 'SALES', label: '영업담당자', color: '#c2410c' },
+  { key: 'USER', label: '일반사용자', color: '#16a34a' }
+];
+
 function ManagePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -64,7 +70,7 @@ function ManagePageInner() {
   const [chunkLog, setChunkLog] = useState([]);
 
   // 시스템 역할(권한) 관리 상태
-  const [roles, setRoles] = useState([]);
+  const [roles, setRoles] = useState(DEFAULT_ROLES);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
@@ -320,6 +326,7 @@ function ManagePageInner() {
       if (data.success) {
         setRoleModalOpen(false);
         fetchRoles();
+        fetchUsers();
         fetch('/api/menu-visibility').then(r => r.json()).then(d => setMenuConfig(d.config || [])).catch(() => {});
         alert(editingRole ? '권한 정보가 수정되었습니다.' : '새 권한이 성공적으로 생성되었습니다.');
       } else {
@@ -440,15 +447,19 @@ function ManagePageInner() {
 
   // ?�용삭제?�보 ?�정 모달 ?�기
   const handleOpenEdit = (u) => {
+    fetchRoles();
     setEditForm({
       name: u.name || '',
       companyNm: u.companyNm || '',
       deptNm: u.deptNm || '',
       positionNm: u.positionNm || '',
       titleNm: u.titleNm || '',
-      role: u.role,
+      role: u.role || 'USER',
       isApproved: u.isApproved,
-      newPassword: ''
+      newPassword: '',
+      dailyChatLimit: u.dailyChatLimit ?? 20,
+      dailyChatCount: u.dailyChatCount ?? 0,
+      resetDailyChat: false
     });
     setShowPasswordReset(false);
     setEditingUser(u);
@@ -468,6 +479,12 @@ function ManagePageInner() {
         role: editForm.role,
         isApproved: editForm.isApproved
       };
+      if (editForm.dailyChatLimit !== undefined) {
+        body.dailyChatLimit = editForm.dailyChatLimit;
+      }
+      if (editForm.resetDailyChat) {
+        body.resetDailyChat = true;
+      }
       if (showPasswordReset && editForm.newPassword) {
         if (editForm.newPassword.length < 4) {
           alert('비밀번호는 최소 4자 이상이어야 합니다.');
@@ -1042,10 +1059,27 @@ function ManagePageInner() {
                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
                         <div>
                            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '5px' }}>권한</label>
-                           <select value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })} style={{ width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '0.9rem' }}>
-                              <option value="USER">USER (일반)</option>
-                              <option value="SALES">SALES (영업담당자)</option>
-                              <option value="ADMIN">ADMIN (관리자)</option>
+                           <select
+                              value={editForm.role || 'USER'}
+                              onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                              style={{ width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '0.9rem', background: '#fff', color: '#0f172a', fontWeight: 500 }}
+                           >
+                              {roles && roles.length > 0 ? (
+                                 roles.map(r => (
+                                    <option key={r.key} value={r.key}>
+                                       {r.key} ({r.label})
+                                    </option>
+                                 ))
+                              ) : (
+                                 <>
+                                    <option value="USER">USER (일반사용자)</option>
+                                    <option value="SALES">SALES (영업담당자)</option>
+                                    <option value="ADMIN">ADMIN (관리자)</option>
+                                 </>
+                              )}
+                              {editForm.role && roles && !roles.some(r => r.key === editForm.role) && (
+                                 <option value={editForm.role}>{editForm.role}</option>
+                              )}
                            </select>
                         </div>
                         <div>
@@ -1178,9 +1212,28 @@ function ManagePageInner() {
                                     <td>{u.deptNm}</td>
                                     <td style={{ color: 'var(--text-muted)' }}>{u.positionNm} / {u.titleNm}</td>
                                     <td style={{ textAlign: 'center' }}>
-                                       <span className={`badge ${u.role === 'ADMIN' ? 'badge-upd' : u.role === 'SALES' ? 'badge-sales' : 'badge-new'}`} style={{ textTransform: 'uppercase' }}>
-                                          {u.role === 'ADMIN' ? 'ADMIN (관리자)' : u.role === 'SALES' ? 'SALES (영업)' : 'USER (일반)'}
-                                       </span>
+                                       {(() => {
+                                          const roleObj = roles.find(r => r.key === u.role);
+                                          const roleLabel = roleObj ? `${roleObj.key} (${roleObj.label})` : (u.role === 'ADMIN' ? 'ADMIN (관리자)' : u.role === 'SALES' ? 'SALES (영업담당자)' : `${u.role || 'USER'} (일반사용자)`);
+                                          const color = roleObj?.color || (u.role === 'ADMIN' ? '#1d4ed8' : u.role === 'SALES' ? '#c2410c' : '#16a34a');
+                                          return (
+                                             <span
+                                                style={{
+                                                   display: 'inline-block',
+                                                   padding: '4px 10px',
+                                                   borderRadius: '6px',
+                                                   fontSize: '0.75rem',
+                                                   fontWeight: 700,
+                                                   backgroundColor: `${color}18`,
+                                                   color: color,
+                                                   border: `1px solid ${color}44`,
+                                                   textTransform: 'uppercase'
+                                                }}
+                                             >
+                                                {roleLabel}
+                                             </span>
+                                          );
+                                       })()}
                                     </td>
                                     <td style={{ textAlign: 'center' }}>
                                        <span className={`status-badge ${u.isApproved ? 'status-success' : 'status-error'}`} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
@@ -1408,9 +1461,28 @@ function ManagePageInner() {
                                  <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{new Date(item.createdAt).toLocaleString()}</td>
                                  <td style={{ fontWeight: 600, color: 'var(--text-color)' }}>{item.username}</td>
                                  <td style={{ textAlign: 'center' }}>
-                                    <span className={`badge ${item.role === 'ADMIN' ? 'badge-upd' : item.role === 'SALES' ? 'badge-sales' : 'badge-new'}`} style={{ fontSize: '0.7rem' }}>
-                                       {item.role === 'ADMIN' ? 'ADMIN' : item.role === 'SALES' ? 'SALES' : 'USER'}
-                                    </span>
+                                    {(() => {
+                                       const roleObj = roles.find(r => r.key === item.role);
+                                       const roleLabel = roleObj ? roleObj.key : item.role;
+                                       const color = roleObj?.color || (item.role === 'ADMIN' ? '#1d4ed8' : item.role === 'SALES' ? '#c2410c' : '#16a34a');
+                                       return (
+                                          <span
+                                             style={{
+                                                display: 'inline-block',
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                                fontSize: '0.7rem',
+                                                fontWeight: 700,
+                                                backgroundColor: `${color}18`,
+                                                color: color,
+                                                border: `1px solid ${color}44`,
+                                                textTransform: 'uppercase'
+                                             }}
+                                          >
+                                             {roleLabel}
+                                          </span>
+                                       );
+                                    })()}
                                  </td>
                                  <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{item.page}</td>
                                  <td style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--accent-secondary)' }}>{item.action}</td>
