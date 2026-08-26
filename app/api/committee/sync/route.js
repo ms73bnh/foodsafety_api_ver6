@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getEmbedding } from '@/lib/gemini';
+import { ensureCommitteeSyncHistoryTables } from '@/lib/committeeSyncHistory';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -191,11 +192,137 @@ export async function fetchArticlesFromPage(pageNum, headers, BASE_URL) {
   return articles;
 }
 
+function pickComparableMeetingFields(record = {}) {
+  return {
+    seq: record.seq || null,
+    postNo: record.postNo || null,
+    title: record.title || null,
+    meetingNo: record.meetingNo || null,
+    department: record.department || null,
+    viewCount: record.viewCount ?? null,
+    postDate: record.postDate || null,
+    sourceUrl: record.sourceUrl || record.href || null,
+    pdfFileName: record.pdfFileName || null,
+    pdfFileUrl: record.pdfFileUrl || null,
+    hwpFileName: record.hwpFileName || null,
+    hwpFileUrl: record.hwpFileUrl || null,
+  };
+}
+
+function diffObjects(beforeData, afterData) {
+  const changed = {};
+  const fields = new Set([...Object.keys(beforeData || {}), ...Object.keys(afterData || {})]);
+  for (const field of fields) {
+    const beforeValue = beforeData?.[field] ?? null;
+    const afterValue = afterData?.[field] ?? null;
+    if (beforeValue !== afterValue) {
+      changed[field] = { before: beforeValue, after: afterValue };
+    }
+  }
+  return changed;
+}
+
+function getMeetingNo(title = '') {
+  const mMeetingNo = title.match(/제?\s*(\d+)\s*차/);
+  return mMeetingNo ? `제${mMeetingNo[1]}차` : null;
+}
+
+async function fetchDetailForArticle(art, headers) {
+  const detailResp = await fetch(art.href, { headers });
+  if (!detailResp.ok) return null;
+
+  const detailHtml = await detailResp.text();
+  const rawText = cleanText(detailHtml);
+  const meetingDateMatch = rawText.match(/일시\s*[:：]\s*([^\n]+)/);
+  const attendeesMatch = rawText.match(/참석자?\s*[:：]\s*([^\n]+)/);
+
+  let pdfFileName = art.pdfFileName;
+  let pdfFileUrl = art.pdfFileUrl;
+  let hwpFileName = art.hwpFileName;
+  let hwpFileUrl = art.hwpFileUrl;
+
+  const detailBase = art.href.substring(0, art.href.lastIndexOf('/') + 1);
+  if (!pdfFileUrl) {
+    const r = findFileLink(detailHtml, /\.pdf/i, detailBase);
+    if (r.url) { pdfFileUrl = r.url; pdfFileName = r.name; }
+  }
+  if (!hwpFileUrl) {
+    const r = findFileLink(detailHtml, /\.(?:hwp|hwpx)/i, detailBase);
+    if (r.url) { hwpFileUrl = r.url; hwpFileName = r.name; }
+  }
+
+  return {
+    rawText,
+    meetingDate: meetingDateMatch ? meetingDateMatch[1].trim() : art.postDate,
+    attendees: attendeesMatch ? attendeesMatch[1].trim() : null,
+    pdfFileName,
+    pdfFileUrl,
+    hwpFileName,
+    hwpFileUrl,
+  };
+}
+
+async function createMeetingWithAgendas(art, detail) {
+  const rawText = detail?.rawText || '';
+  const meetingDate = detail?.meetingDate || art.postDate;
+  const createdMeeting = await prisma.committee_meetings.create({
+    data: {
+      seq: art.seq,
+      postNo: art.postNo,
+      title: art.title,
+      meetingNo: getMeetingNo(art.title),
+      meetingDate,
+      department: art.department,
+      viewCount: art.viewCount,
+      postDate: art.postDate,
+      attendees: detail?.attendees || null,
+      rawContent: rawText ? rawText.substring(0, 8000) : null,
+      sourceUrl: art.href,
+      pdfFileName: detail?.pdfFileName || art.pdfFileName,
+      pdfFileUrl: detail?.pdfFileUrl || art.pdfFileUrl,
+      hwpFileName: detail?.hwpFileName || art.hwpFileName,
+      hwpFileUrl: detail?.hwpFileUrl || art.hwpFileUrl,
+    }
+  });
+
+  let addedAgendas = 0;
+  const agendas = parseAgendas(rawText, art.title);
+  for (const ag of agendas) {
+    let embeddingJson = null;
+    try {
+      const embedText = `회의: ${art.title} (일시: ${meetingDate || ''})\n원료/안건: ${ag.ingredientName} (${ag.agendaType})\n결과: ${ag.result}\n내용: ${ag.rawName}`;
+      const vector = await getEmbedding(embedText);
+      if (vector?.length > 0) embeddingJson = JSON.stringify(vector);
+    } catch (e) {
+      console.warn('Embedding failed:', ag.ingredientName, e.message);
+    }
+
+    await prisma.committee_agendas.create({
+      data: {
+        meetingId: createdMeeting.id,
+        orderIndex: ag.orderIndex,
+        rawName: ag.rawName,
+        ingredientName: ag.ingredientName,
+        result: ag.result,
+        agendaType: ag.agendaType,
+        details: ag.details,
+        embedding: embeddingJson
+      }
+    });
+    addedAgendas++;
+  }
+
+  return { meeting: createdMeeting, addedAgendas };
+}
+
 export async function POST(req) {
   try {
     const body = await req.json().catch(() => ({}));
-    // 기본적으로 최신 3개 페이지를 조회하여 신규 게시물만 자동 증분 동기화
-    const pages = Math.min(parseInt(body.pages || '3'), 50);
+    await ensureCommitteeSyncHistoryTables(prisma);
+
+    // 전체 목록 비교를 기본값으로 사용한다. 식약처 현재 목록은 약 37페이지라 50페이지면 끝까지 확인 가능.
+    const pages = Math.min(parseInt(body.pages || '50'), 80);
+    const mode = body.mode || 'full';
 
     const BASE_URL = 'https://www.mfds.go.kr';
     const headers = {
@@ -203,133 +330,194 @@ export async function POST(req) {
       'Accept-Language': 'ko-KR,ko;q=0.9',
     };
 
+    const syncRun = await prisma.committee_sync_runs.create({
+      data: { mode, pagesRequested: pages, status: 'RUNNING' },
+    });
+
+    let pagesFetched = 0;
+    let scannedCount = 0;
     let addedMeetings = 0;
     let addedAgendas = 0;
-    let skippedMeetings = 0;
+    let updatedMeetings = 0;
+    let unchangedMeetings = 0;
 
-    for (let page = 1; page <= pages; page++) {
-      const articles = await fetchArticlesFromPage(page, headers, BASE_URL);
+    try {
+      for (let page = 1; page <= pages; page++) {
+        const articles = await fetchArticlesFromPage(page, headers, BASE_URL);
+        if (articles.length === 0) break;
+        pagesFetched++;
 
-      for (const art of articles) {
-        const existing = await prisma.committee_meetings.findUnique({ where: { seq: art.seq } });
-        
-        // 이미 존재할 때 메타데이터 보강 업데이트 (postNo, viewCount, postDate 등)
-        if (existing) {
-          if (!existing.postNo || !existing.postDate || !existing.hwpFileUrl) {
+        for (const art of articles) {
+          scannedCount++;
+          const existing = await prisma.committee_meetings.findUnique({
+            where: { seq: art.seq },
+            include: { agendas: { select: { id: true }, take: 1 } },
+          });
+
+          if (!existing) {
+            try {
+              const detail = await fetchDetailForArticle(art, headers);
+              const { meeting, addedAgendas: agendaCount } = await createMeetingWithAgendas(art, detail, headers);
+              addedMeetings++;
+              addedAgendas += agendaCount;
+
+              await prisma.committee_sync_changes.create({
+                data: {
+                  runId: syncRun.id,
+                  meetingId: meeting.id,
+                  seq: art.seq,
+                  changeType: 'CREATE',
+                  title: art.title,
+                  changedFields: Object.keys(pickComparableMeetingFields({ ...art, sourceUrl: art.href })).join(','),
+                  beforeData: null,
+                  afterData: {
+                    meeting: pickComparableMeetingFields({ ...art, sourceUrl: art.href }),
+                    agendaCount,
+                  },
+                },
+              });
+            } catch (err) {
+              console.error(`Error creating ${art.seq}:`, err.message);
+              await prisma.committee_sync_changes.create({
+                data: {
+                  runId: syncRun.id,
+                  seq: art.seq,
+                  changeType: 'ERROR',
+                  title: art.title,
+                  afterData: { message: err.message },
+                },
+              });
+            }
+            continue;
+          }
+
+          const beforeData = pickComparableMeetingFields(existing);
+          const afterCandidate = pickComparableMeetingFields({
+            ...art,
+            sourceUrl: art.href,
+            meetingNo: existing.meetingNo || getMeetingNo(art.title),
+          });
+          const changes = diffObjects(beforeData, afterCandidate);
+          const changedFields = Object.keys(changes);
+          const needsAgendaBackfill = existing.agendas.length === 0 && existing.rawContent;
+
+          if (changedFields.length === 0 && !needsAgendaBackfill) {
+            unchangedMeetings++;
+            continue;
+          }
+
+          const updateData = {};
+          for (const field of changedFields) {
+            if (field === 'seq') continue;
+            if (field === 'sourceUrl') updateData.sourceUrl = afterCandidate.sourceUrl;
+            else updateData[field] = afterCandidate[field];
+          }
+          if (!existing.meetingNo && afterCandidate.meetingNo) updateData.meetingNo = afterCandidate.meetingNo;
+
+          if (Object.keys(updateData).length > 0) {
             await prisma.committee_meetings.update({
               where: { seq: art.seq },
-              data: {
-                postNo: art.postNo || existing.postNo,
-                viewCount: art.viewCount ?? existing.viewCount,
-                postDate: art.postDate || existing.postDate,
-                hwpFileName: art.hwpFileName || existing.hwpFileName,
-                hwpFileUrl: art.hwpFileUrl || existing.hwpFileUrl,
-                pdfFileName: art.pdfFileName || existing.pdfFileName,
-                pdfFileUrl: art.pdfFileUrl || existing.pdfFileUrl,
-              }
+              data: updateData,
             });
           }
-          skippedMeetings++;
-          continue;
-        }
 
-        // 신규 게시물 크롤링
-        try {
-          const detailResp = await fetch(art.href, { headers });
-          if (!detailResp.ok) continue;
-          const detailHtml = await detailResp.text();
-          const rawText = cleanText(detailHtml);
-
-          const mMeetingNo = art.title.match(/제?\s*(\d+)\s*차/);
-          const meetingNo = mMeetingNo ? `제${mMeetingNo[1]}차` : null;
-          const mDate = rawText.match(/일시\s*[:：]\s*([^\n]+)/);
-          const meetingDate = mDate ? mDate[1].trim() : art.postDate;
-          const mAttendees = rawText.match(/참석자?\s*[:：]\s*([^\n]+)/);
-          const attendees = mAttendees ? mAttendees[1].trim() : null;
-
-          // 상세 페이지 내 PDF / HWP 링크 재확인
-          let pdfFileName = art.pdfFileName, pdfFileUrl = art.pdfFileUrl;
-          let hwpFileName = art.hwpFileName, hwpFileUrl = art.hwpFileUrl;
-
-          const detailBase = art.href.substring(0, art.href.lastIndexOf('/') + 1);
-          if (!pdfFileUrl) {
-            const r = findFileLink(detailHtml, /\.pdf/i, detailBase);
-            if (r.url) { pdfFileUrl = r.url; pdfFileName = r.name; }
+          let backfilledAgendas = 0;
+          if (needsAgendaBackfill) {
+            const agendas = parseAgendas(existing.rawContent, art.title);
+            for (const ag of agendas) {
+              await prisma.committee_agendas.create({
+                data: {
+                  meetingId: existing.id,
+                  orderIndex: ag.orderIndex,
+                  rawName: ag.rawName,
+                  ingredientName: ag.ingredientName,
+                  result: ag.result,
+                  agendaType: ag.agendaType,
+                  details: ag.details,
+                }
+              });
+              backfilledAgendas++;
+            }
           }
-          if (!hwpFileUrl) {
-            const r = findFileLink(detailHtml, /\.(?:hwp|hwpx)/i, detailBase);
-            if (r.url) { hwpFileUrl = r.url; hwpFileName = r.name; }
-          }
+          addedAgendas += backfilledAgendas;
+          updatedMeetings++;
 
-          const createdMeeting = await prisma.committee_meetings.create({
+          await prisma.committee_sync_changes.create({
             data: {
+              runId: syncRun.id,
+              meetingId: existing.id,
               seq: art.seq,
-              postNo: art.postNo,
+              changeType: changedFields.length > 0 ? 'UPDATE' : 'AGENDA_BACKFILL',
               title: art.title,
-              meetingNo,
-              meetingDate,
-              department: art.department,
-              viewCount: art.viewCount,
-              postDate: art.postDate,
-              attendees,
-              rawContent: rawText.substring(0, 8000),
-              sourceUrl: art.href,
-              pdfFileName,
-              pdfFileUrl,
-              hwpFileName,
-              hwpFileUrl,
-            }
+              changedFields: [
+                ...changedFields,
+                ...(backfilledAgendas > 0 ? ['agendas'] : []),
+              ].join(','),
+              beforeData: {
+                meeting: beforeData,
+                agendaCount: existing.agendas.length,
+              },
+              afterData: {
+                meeting: { ...beforeData, ...updateData },
+                agendaCount: existing.agendas.length + backfilledAgendas,
+                changes,
+              },
+            },
           });
-          addedMeetings++;
-
-          // 안건 파싱 & 임베딩
-          const agendas = parseAgendas(rawText, art.title);
-          for (const ag of agendas) {
-            let embeddingJson = null;
-            try {
-              const embedText = `회의: ${art.title} (일시: ${meetingDate || ''})\n원료/안건: ${ag.ingredientName} (${ag.agendaType})\n결과: ${ag.result}\n내용: ${ag.rawName}`;
-              const vector = await getEmbedding(embedText);
-              if (vector?.length > 0) embeddingJson = JSON.stringify(vector);
-            } catch (e) {
-              console.warn('Embedding failed:', ag.ingredientName, e.message);
-            }
-
-            await prisma.committee_agendas.create({
-              data: {
-                meetingId: createdMeeting.id,
-                orderIndex: ag.orderIndex,
-                rawName: ag.rawName,
-                ingredientName: ag.ingredientName,
-                result: ag.result,
-                agendaType: ag.agendaType,
-                details: ag.details,
-                embedding: embeddingJson
-              }
-            });
-            addedAgendas++;
-          }
-        } catch (err) {
-          console.error(`Error processing ${art.seq}:`, err.message);
         }
       }
+
+      const [totalMeetings, totalAgendas, embeddedAgendas] = await Promise.all([
+        prisma.committee_meetings.count(),
+        prisma.committee_agendas.count(),
+        prisma.committee_agendas.count({ where: { NOT: { embedding: null } } }),
+      ]);
+
+      await prisma.committee_sync_runs.update({
+        where: { id: syncRun.id },
+        data: {
+          status: 'SUCCESS',
+          pagesFetched,
+          scannedCount,
+          createdCount: addedMeetings,
+          updatedCount: updatedMeetings,
+          unchangedCount: unchangedMeetings,
+          agendaCreatedCount: addedAgendas,
+          finishedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        runId: syncRun.id,
+        message: `전체 비교 동기화 완료: ${scannedCount}건 확인 / 신규 ${addedMeetings}건 / 변경 ${updatedMeetings}건 / 동일 ${unchangedMeetings}건`,
+        pagesFetched,
+        scannedCount,
+        addedMeetings,
+        updatedMeetings,
+        unchangedMeetings,
+        addedAgendas,
+        totalMeetings,
+        totalAgendas,
+        embeddedAgendas,
+      });
+    } catch (runError) {
+      await prisma.committee_sync_runs.update({
+        where: { id: syncRun.id },
+        data: {
+          status: 'FAILED',
+          pagesFetched,
+          scannedCount,
+          createdCount: addedMeetings,
+          updatedCount: updatedMeetings,
+          unchangedCount: unchangedMeetings,
+          agendaCreatedCount: addedAgendas,
+          errorMessage: runError.message,
+          finishedAt: new Date(),
+        },
+      });
+      throw runError;
     }
-
-    const [totalMeetings, totalAgendas, embeddedAgendas] = await Promise.all([
-      prisma.committee_meetings.count(),
-      prisma.committee_agendas.count(),
-      prisma.committee_agendas.count({ where: { NOT: { embedding: null } } }),
-    ]);
-
-    return NextResponse.json({
-      success: true,
-      message: `동기화 완료: 신규 ${addedMeetings}개 회의 / ${addedAgendas}개 안건 처리 (기존 ${skippedMeetings}개 최신 상태 유지)`,
-      addedMeetings,
-      addedAgendas,
-      skippedMeetings,
-      totalMeetings,
-      totalAgendas,
-      embeddedAgendas,
-    });
   } catch (error) {
     console.error('Committee Sync Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

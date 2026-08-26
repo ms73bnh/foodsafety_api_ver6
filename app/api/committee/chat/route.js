@@ -11,6 +11,238 @@ function todayKST() {
   return d.toISOString().slice(0, 10);
 }
 
+function normalizeForSearch(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[’‘“”"'`]/g, '')
+    .replace(/[()\[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function uniqueBy(items, keyFn) {
+  const seen = new Set();
+  const result = [];
+  for (const item of items) {
+    const key = keyFn(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function extractSearchTerms(question = '') {
+  const stopWords = new Set([
+    '관련', '관련된', '관련한', '대한', '대해', '회의', '회의록', '결과', '심의결과',
+    '심의', '안건', '원료', '성분', '목록', '내용', '자료', '알려줘', '알려주세요',
+    '찾아줘', '검색', '검색해줘', '어떻게', '무엇', '뭐야', '요약', '해줘', '주세요',
+    '인정', '보완', '불인정', '승인', '통과', '최근', '최신', '기능성', '추가',
+    '받은', '받았', '인정받', '있어', '있나요', '있습니까', '원료들',
+    '개별인정형', '개별인정', '건강기능식품심의위원회', '건강기능식품',
+  ]);
+
+  const terms = new Set();
+  const addTerm = (raw) => {
+    let term = String(raw || '')
+      .replace(/^[\s"'‘“\[\]{}()<>·ㆍ•,.:;!?]+|[\s"'’”\[\]{}()<>·ㆍ•,.:;!?]+$/g, '')
+      .replace(/(관련된?|관련한|에\s*대한|에\s*대해|의|은|는|이|가|을|를|와|과|로|으로|에서)$/g, '')
+      .trim();
+    if (!term || term.length < 2 || stopWords.has(term)) return;
+    terms.add(term);
+    const base = term.replace(/\([^)]*\)/g, '').trim();
+    if (base && base.length >= 2 && !stopWords.has(base)) terms.add(base);
+  };
+
+  const quoted = question.match(/["'‘“]([^"'’”]+)["'’”]/g) || [];
+  quoted.forEach(q => addTerm(q.replace(/^["'‘“]|["'’”]$/g, '')));
+  question.split(/[\s,;!?]+/).forEach(addTerm);
+
+  return Array.from(terms).slice(0, 10);
+}
+
+function lexicalScore(text = '', terms = [], fullQuestion = '') {
+  const normalizedText = normalizeForSearch(text);
+  if (!normalizedText) return 0;
+
+  let score = 0;
+  const normalizedFull = normalizeForSearch(fullQuestion);
+  if (normalizedFull.length >= 4 && normalizedText.includes(normalizedFull)) score += 1.2;
+
+  for (const term of terms) {
+    const normalizedTerm = normalizeForSearch(term);
+    if (!normalizedTerm || normalizedTerm.length < 2) continue;
+    if (normalizedText.includes(normalizedTerm)) score += Math.min(1, 0.35 + normalizedTerm.length / 30);
+  }
+
+  return score;
+}
+
+function agendaToContextLine(agenda, index) {
+  return `${index + 1}. ${agenda.ingredientName} | ${agenda.agendaType || '신규인정'} | ${agenda.result} | ` +
+    `${agenda.meeting?.meetingNo || '-'} | ${agenda.meeting?.meetingDate || agenda.meeting?.postDate || '-'}`;
+}
+
+function scoreAgenda(agenda, queryVector, terms, question) {
+  const text = [
+    agenda.ingredientName,
+    agenda.rawName,
+    agenda.details,
+    agenda.result,
+    agenda.agendaType,
+    agenda.meeting?.title,
+    agenda.meeting?.meetingNo,
+    agenda.meeting?.meetingDate,
+    agenda.meeting?.postDate,
+  ].filter(Boolean).join('\n');
+
+  let score = lexicalScore(text, terms, question);
+  if (queryVector.length > 0 && agenda.embedding) {
+    try { score += cosineSimilarity(queryVector, JSON.parse(agenda.embedding)); } catch (e) {}
+  }
+  return score;
+}
+
+async function findDirectAgendaMatches(question, terms, queryVector, junkKeywords) {
+  const usefulTerms = terms.filter(t => normalizeForSearch(t).length >= 2);
+  if (usefulTerms.length === 0) return [];
+
+  const or = usefulTerms.flatMap(term => ([
+    { ingredientName: { contains: term, mode: 'insensitive' } },
+    { rawName: { contains: term, mode: 'insensitive' } },
+    { details: { contains: term, mode: 'insensitive' } },
+    { meeting: { title: { contains: term, mode: 'insensitive' } } },
+  ]));
+
+  const agendas = await prisma.committee_agendas.findMany({
+    where: { OR: or },
+    orderBy: { id: 'desc' },
+    take: 50,
+    include: {
+      meeting: {
+        select: {
+          id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
+          pdfFileName: true, pdfFileUrl: true, sourceUrl: true,
+        },
+      },
+    },
+  }).catch(() => []);
+
+  return agendas
+    .filter(a => a.ingredientName?.length >= 2 && !junkKeywords.some(k => a.ingredientName.includes(k)))
+    .map(a => ({ ...a, score: scoreAgenda(a, queryVector, usefulTerms, question) + 1 }))
+    .filter(a => a.score > 0.2)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
+}
+
+async function findMeetingEmbeddingMatches(question, terms, queryVector) {
+  if (queryVector.length === 0) return [];
+
+  const matches = [];
+  const batchSize = 300;
+  let cursor = 0;
+
+  while (true) {
+    const meetings = await prisma.committee_meetings.findMany({
+      where: { NOT: { contentEmbedding: null } },
+      orderBy: { id: 'desc' },
+      skip: cursor,
+      take: batchSize,
+      select: {
+        id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
+        rawContent: true, pdfContent: true, contentEmbedding: true,
+        agendas: { select: { ingredientName: true, result: true }, take: 10 },
+      },
+    });
+
+    if (meetings.length === 0) break;
+
+    for (const meeting of meetings) {
+      let score = lexicalScore([
+        meeting.title,
+        meeting.meetingNo,
+        meeting.meetingDate,
+        meeting.postDate,
+        meeting.rawContent,
+        meeting.pdfContent,
+        meeting.agendas.map(a => `${a.ingredientName} ${a.result}`).join(' '),
+      ].filter(Boolean).join('\n'), terms, question);
+      try { score += cosineSimilarity(queryVector, JSON.parse(meeting.contentEmbedding)); } catch (e) {}
+      if (meeting.meetingNo && normalizeForSearch(question).includes(normalizeForSearch(meeting.meetingNo))) score += 0.4;
+      if (score > 0.12) matches.push({ ...meeting, score });
+    }
+
+    if (meetings.length < batchSize) break;
+    cursor += meetings.length;
+  }
+
+  return matches.sort((a, b) => b.score - a.score).slice(0, 4);
+}
+
+async function findChunkMatches(question, terms, queryVector) {
+  const matches = [];
+  const batchSize = 300;
+  let cursor = 0;
+
+  if (queryVector.length > 0) {
+    while (true) {
+      const chunks = await prisma.committee_chunks.findMany({
+        where: { NOT: { embedding: null } },
+        orderBy: { id: 'desc' },
+        skip: cursor,
+        take: batchSize,
+        select: {
+          id: true, meetingId: true, chunkType: true, content: true, embedding: true,
+          meeting: {
+            select: {
+              id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
+              pdfFileName: true, pdfFileUrl: true, sourceUrl: true,
+            },
+          },
+        },
+      });
+
+      if (chunks.length === 0) break;
+
+      for (const chunk of chunks) {
+        let score = lexicalScore(chunk.content, terms, question);
+        try { score += cosineSimilarity(queryVector, JSON.parse(chunk.embedding)); } catch (e) {}
+        if (chunk.meeting?.meetingNo && normalizeForSearch(question).includes(normalizeForSearch(chunk.meeting.meetingNo))) score += 0.3;
+        if (score > 0.3) matches.push({ ...chunk, score });
+      }
+
+      if (chunks.length < batchSize) break;
+      cursor += chunks.length;
+    }
+  }
+
+  if (terms.length > 0) {
+    const lexicalChunks = await prisma.committee_chunks.findMany({
+      where: { OR: terms.map(term => ({ content: { contains: term, mode: 'insensitive' } })) },
+      orderBy: { id: 'desc' },
+      take: 100,
+      select: {
+        id: true, meetingId: true, chunkType: true, content: true, embedding: true,
+        meeting: {
+          select: {
+            id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
+            pdfFileName: true, pdfFileUrl: true, sourceUrl: true,
+          },
+        },
+      },
+    }).catch(() => []);
+
+    lexicalChunks.forEach(chunk => {
+      matches.push({ ...chunk, score: lexicalScore(chunk.content, terms, question) + 1 });
+    });
+  }
+
+  return uniqueBy(matches, c => c.id)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+}
+
 // 비로그인 IP용 인메모리 백업 Map
 const ipCountMap = new Map();
 
@@ -132,6 +364,9 @@ export async function POST(req) {
 
     const cleanQuestion = question.trim();
     const lowerQ = cleanQuestion.toLowerCase();
+    const searchTerms = extractSearchTerms(cleanQuestion);
+    let queryVector = [];
+    try { queryVector = await getEmbedding(cleanQuestion); } catch (e) {}
 
     // 0. 커스텀 시스템 프롬프트 로드 (관리자 설정 or 기본값)
     let systemInstruction;
@@ -180,27 +415,9 @@ export async function POST(req) {
     // 2-1. 회의 레벨 임베딩 검색 (contentEmbedding 있는 경우)
     let meetingEmbedContext = '';
     try {
-      let qVec = [];
-      try { qVec = await getEmbedding(cleanQuestion); } catch (e) {}
-      if (qVec.length > 0) {
-        const meetingsWithEmbed = await prisma.committee_meetings.findMany({
-          where: { NOT: { contentEmbedding: null } },
-          orderBy: { id: 'desc' },
-          take: 100,
-          select: {
-            id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
-            rawContent: true, pdfContent: true, contentEmbedding: true,
-            agendas: { select: { ingredientName: true, result: true }, take: 5 },
-          },
-        });
-        const scoredMeetings = meetingsWithEmbed.map(m => {
-          let score = 0;
-          try { score = cosineSimilarity(qVec, JSON.parse(m.contentEmbedding)); } catch (e) {}
-          if (m.meetingNo && lowerQ.includes(m.meetingNo)) score += 0.4;
-          if (m.title && lowerQ.includes(m.title.substring(0, 6))) score += 0.2;
-          return { ...m, score };
-        }).filter(m => m.score > 0.1).sort((a, b) => b.score - a.score).slice(0, 3);
+      const scoredMeetings = await findMeetingEmbeddingMatches(cleanQuestion, searchTerms, queryVector);
 
+      if (scoredMeetings.length > 0) {
         meetingEmbedContext = scoredMeetings.map((m, i) =>
           `[회의자료 ${i + 1}] 제목: ${m.title}\n` +
           `회차: ${m.meetingNo || '-'} | 일시: ${m.meetingDate || m.postDate || '-'}\n` +
@@ -215,7 +432,16 @@ export async function POST(req) {
       (m.agendas.length ? `\n  안건: ${m.agendas.map(a => `${a.ingredientName}(${a.result})`).join(', ')}` : '')
     ).join('\n');
 
-    // 2-2. 자주 묻는 정형 질문: 최근 기능성 추가 + 인정 안건은 임베딩보다 DB 조건 검색이 정확함
+    // 2-2. 원료명/안건명 역검색: 임베딩보다 DB 문자열 직접 조회가 우선
+    let directIngredientContext = '';
+    const directIngredientMatches = await findDirectAgendaMatches(cleanQuestion, searchTerms, queryVector, JUNK_KEYWORDS);
+    if (directIngredientMatches.length > 0) {
+      topMatches = directIngredientMatches;
+      directIngredientContext = `[원료/안건 직접 조회 결과]\n` +
+        directIngredientMatches.map(agendaToContextLine).join('\n');
+    }
+
+    // 2-3. 자주 묻는 정형 질문: 최근 기능성 추가 + 인정 안건은 임베딩보다 DB 조건 검색이 정확함
     let directAgendaContext = '';
     if (isFunctionalityAdditionApprovedQuery) {
       const directAgendas = await prisma.committee_agendas.findMany({
@@ -243,10 +469,7 @@ export async function POST(req) {
       if (validDirectAgendas.length > 0) {
         topMatches = validDirectAgendas.map(a => ({ ...a, meeting: a.meeting, score: 1 }));
         directAgendaContext = `[조건 직접 조회: 최근 기능성 추가 인정 안건]\n` +
-          validDirectAgendas.map((a, i) =>
-            `${i + 1}. ${a.ingredientName} | ${a.agendaType || '기능성추가'} | ${a.result} | ` +
-            `${a.meeting?.meetingNo || '-'} | ${a.meeting?.meetingDate || a.meeting?.postDate || '-'}`
-          ).join('\n');
+          validDirectAgendas.map(agendaToContextLine).join('\n');
       }
     }
 
@@ -270,34 +493,16 @@ export async function POST(req) {
 
     // 4. 청크 임베딩 검색 (메인 RAG 검색)
     let chunkContext = '';
-    let queryVector = [];
-    try { queryVector = await getEmbedding(cleanQuestion); } catch (e) {}
 
-    const chunkCount = await prisma.committee_chunks.count({ where: { NOT: { embedding: null } } });
+    const chunkCount = await prisma.committee_chunks.count();
 
-    if (chunkCount > 0 && queryVector.length > 0) {
-      // 청크 DB에서 상위 후보 가져오기 (최신 500개)
-      const candidates = await prisma.committee_chunks.findMany({
-        where: { NOT: { embedding: null } },
-        orderBy: { id: 'desc' },
-        take: 500,
-        select: { id: true, meetingId: true, chunkType: true, content: true, embedding: true,
-          meeting: { select: { id: true, title: true, meetingNo: true, meetingDate: true, postDate: true } } },
-      });
-
-      const scored = candidates.map(c => {
-        let score = 0;
-        try { score = cosineSimilarity(queryVector, JSON.parse(c.embedding)); } catch (e) {}
-        if (c.meeting?.meetingNo && lowerQ.includes(c.meeting.meetingNo.replace('제', '').replace('차', ''))) score += 0.3;
-        if (lowerQ.length > 2 && c.content.includes(cleanQuestion.substring(0, 6))) score += 0.2;
-        return { ...c, score };
-      }).filter(c => c.score > 0.3).sort((a, b) => b.score - a.score);
-
-      const topChunks = scored.slice(0, 6);
+    if (chunkCount > 0 && (queryVector.length > 0 || searchTerms.length > 0)) {
+      // 전체 청크 DB에서 임베딩 점수와 키워드 점수를 함께 계산
+      const topChunks = await findChunkMatches(cleanQuestion, searchTerms, queryVector);
       chunkContext = topChunks.map((c, i) => `[검색결과 ${i + 1}] (${c.chunkType})\n${c.content}`).join('\n\n');
 
       // ref 데이터용: 안건 청크에서 원료명/결과 추출
-      if (!directAgendaContext) topMatches = topChunks
+      if (!directAgendaContext && directIngredientMatches.length === 0) topMatches = topChunks
         .filter(c => c.chunkType === 'agenda')
         .slice(0, 5)
         .map(c => {
@@ -315,7 +520,7 @@ export async function POST(req) {
     } else {
       // 청크 없으면 기존 안건 검색 폴백
       const allAgendas = await prisma.committee_agendas.findMany({
-        include: { meeting: true }, orderBy: { id: 'desc' }, take: 300,
+        include: { meeting: true }, orderBy: { id: 'desc' },
       });
       const validAgendas = allAgendas.filter(item =>
         item.ingredientName?.length >= 2 && !JUNK_KEYWORDS.some(k => item.ingredientName.includes(k))
@@ -354,11 +559,13 @@ export async function POST(req) {
       : '';
 
     const contextParts = [
-      specificMeetingContext || `[최신 회의 목록]\n${latestMeetingsContext}`,
+      specificMeetingContext,
+      directIngredientContext,
       directAgendaContext,
       rawContentContext ? `[관련 회의 본문]\n${rawContentContext}` : '',
       meetingEmbedContext ? `[회의록 유사도 검색결과]\n${meetingEmbedContext}` : '',
       chunkContext ? `[심의 안건 검색결과]\n${chunkContext}` : '',
+      !specificMeetingContext ? `[최신 회의 목록]\n${latestMeetingsContext}` : '',
     ].filter(Boolean).join('\n\n---\n\n');
 
     const userPrompt = `[참고자료]:
@@ -377,7 +584,10 @@ ${contextParts}
 
     const customReadable = new ReadableStream({
       async start(controller) {
-        const refData = topMatches.map(m => ({
+        const refData = uniqueBy(
+          topMatches,
+          m => `${m.meeting?.id || ''}:${m.ingredientName || ''}:${m.result || ''}`,
+        ).slice(0, 10).map(m => ({
           id: m.id,
           ingredientName: m.ingredientName,
           result: m.result,

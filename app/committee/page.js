@@ -177,6 +177,11 @@ export default function CommitteePage() {
   // 3. 동기화 상태
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
+  const [syncHistoryOpen, setSyncHistoryOpen] = useState(false);
+  const [syncHistoryLoading, setSyncHistoryLoading] = useState(false);
+  const [syncRuns, setSyncRuns] = useState([]);
+  const [selectedSyncRun, setSelectedSyncRun] = useState(null);
+  const [expandedSyncChange, setExpandedSyncChange] = useState(null);
 
   // 4. PDF 미리보기 모달 상태
   const [previewPdf, setPreviewPdf] = useState(null); // { id, title, fileName, fileUrl }
@@ -349,21 +354,22 @@ export default function CommitteePage() {
     fetchMeetings(1);
   }, []);
 
-  // 동기화 실행 (신규 게시물 자동 감지)
+  // 동기화 실행 (전체 목록 비교 + 변경 이력 기록)
   const handleSync = async () => {
-    if (!confirm("식약처 심의위원회 게시판의 최신 회의록을 확인하고 신규 게시물을 자동 동기화하시겠습니까?")) return;
+    if (!confirm("식약처 심의위원회 게시판 전체 목록을 비교하고 신규/변경분만 업데이트하시겠습니까?")) return;
     setSyncing(true);
     setSyncMsg("");
     try {
       const res = await fetch("/api/committee/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pages: 3 })
+        body: JSON.stringify({ pages: 50, mode: "full" })
       });
       const json = await res.json();
       if (json.success) {
         setSyncMsg(json.message);
         await Promise.all([fetchMeetings(1), fetchAgendas(1)]);
+        if (syncHistoryOpen) await fetchSyncHistory();
       } else {
         alert(json.error || "동기화 중 오류가 발생했습니다.");
       }
@@ -372,6 +378,34 @@ export default function CommitteePage() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const fetchSyncHistory = async (runId) => {
+    setSyncHistoryLoading(true);
+    try {
+      const url = runId ? `/api/committee/sync-history?runId=${runId}` : "/api/committee/sync-history?limit=20";
+      const res = await fetch(url);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "이력 조회 실패");
+      if (runId) {
+        setSelectedSyncRun(json.data);
+        setExpandedSyncChange(null);
+      } else {
+        setSyncRuns(json.data || []);
+        if (!selectedSyncRun && json.data?.[0]?.id) {
+          await fetchSyncHistory(json.data[0].id);
+        }
+      }
+    } catch (e) {
+      alert("동기화 이력 조회 오류: " + e.message);
+    } finally {
+      setSyncHistoryLoading(false);
+    }
+  };
+
+  const openSyncHistory = async () => {
+    setSyncHistoryOpen(true);
+    await fetchSyncHistory();
   };
 
   // 챗봇 스크롤 자동 이동 (컨테이너 내부만 스크롤, 페이지 전체 스크롤 방지)
@@ -579,10 +613,23 @@ export default function CommitteePage() {
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {syncMsg && (
             <span style={{ fontSize: "0.82rem", color: "#0d9488", fontWeight: 600 }}>{syncMsg}</span>
           )}
+          <button
+            onClick={openSyncHistory}
+            disabled={syncHistoryLoading}
+            style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
+              background: "#fff", color: "#334155", border: "1px solid #cbd5e1", borderRadius: 10,
+              fontWeight: 700, fontSize: "0.84rem", cursor: syncHistoryLoading ? "wait" : "pointer",
+              boxShadow: "0 1px 4px rgba(15,23,42,0.06)"
+            }}
+          >
+            <i className={`fa-solid ${syncHistoryLoading ? "fa-spinner fa-spin" : "fa-clock-rotate-left"}`} />
+            변경 이력
+          </button>
           <button
             onClick={handleSync}
             disabled={syncing}
@@ -594,7 +641,7 @@ export default function CommitteePage() {
             }}
           >
             <i className={`fa-solid ${syncing ? "fa-spinner fa-spin" : "fa-rotate"}`} />
-            {syncing ? "최신 공시 동기화 중..." : "최신 회의록 동기화"}
+            {syncing ? "전체 비교 동기화 중..." : "전체 비교 동기화"}
           </button>
         </div>
       </div>
@@ -1715,6 +1762,143 @@ export default function CommitteePage() {
                 totalPages={agendaPages}
                 onChange={(p) => fetchAgendas(p)}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 동기화 변경 이력 모달 */}
+      {syncHistoryOpen && (
+        <div
+          onClick={() => setSyncHistoryOpen(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(15,23,42,0.72)", zIndex: 9998,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#fff", borderRadius: 12, width: "100%", maxWidth: 1100, height: "88vh",
+              display: "grid", gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
+              overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,0.35)"
+            }}
+          >
+            <div style={{ borderRight: isMobile ? "none" : "1px solid #e2e8f0", borderBottom: isMobile ? "1px solid #e2e8f0" : "none", overflowY: "auto", background: "#f8fafc" }}>
+              <div style={{ padding: 16, borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "0.95rem", color: "#0f172a" }}>
+                  <i className="fa-solid fa-clock-rotate-left" style={{ color: "#0284c7", marginRight: 8 }} />
+                  동기화 이력
+                </strong>
+                <button
+                  onClick={() => fetchSyncHistory()}
+                  disabled={syncHistoryLoading}
+                  title="새로고침"
+                  style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", color: "#475569", cursor: "pointer" }}
+                >
+                  <i className={`fa-solid ${syncHistoryLoading ? "fa-spinner fa-spin" : "fa-rotate-right"}`} />
+                </button>
+              </div>
+              <div style={{ padding: 10 }}>
+                {syncRuns.length === 0 ? (
+                  <div style={{ padding: 20, color: "#94a3b8", fontSize: "0.82rem", textAlign: "center" }}>아직 동기화 이력이 없습니다.</div>
+                ) : syncRuns.map(run => {
+                  const active = selectedSyncRun?.id === run.id;
+                  return (
+                    <button
+                      key={run.id}
+                      onClick={() => fetchSyncHistory(run.id)}
+                      style={{
+                        width: "100%", textAlign: "left", padding: 12, marginBottom: 8, borderRadius: 8,
+                        border: active ? "1px solid #0284c7" : "1px solid #e2e8f0",
+                        background: active ? "#e0f2fe" : "#fff", cursor: "pointer"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                        <strong style={{ color: "#0f172a", fontSize: "0.82rem" }}>#{run.id} 전체 비교</strong>
+                        <span style={{
+                          fontSize: "0.68rem", fontWeight: 800, padding: "2px 6px", borderRadius: 5,
+                          background: run.status === "SUCCESS" ? "#dcfce7" : run.status === "FAILED" ? "#fee2e2" : "#fef3c7",
+                          color: run.status === "SUCCESS" ? "#15803d" : run.status === "FAILED" ? "#dc2626" : "#b45309"
+                        }}>{run.status}</span>
+                      </div>
+                      <div style={{ color: "#64748b", fontSize: "0.72rem", lineHeight: 1.5 }}>
+                        {new Date(run.startedAt).toLocaleString("ko-KR")}<br />
+                        확인 {run.scannedCount} · 신규 {run.createdCount} · 변경 {run.updatedCount}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                <div>
+                  <strong style={{ color: "#0f172a", fontSize: "1rem" }}>변경 전/후 상세</strong>
+                  {selectedSyncRun && (
+                    <span style={{ marginLeft: 8, color: "#64748b", fontSize: "0.78rem" }}>
+                      신규 {selectedSyncRun.createdCount} · 변경 {selectedSyncRun.updatedCount} · 동일 {selectedSyncRun.unchangedCount}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSyncHistoryOpen(false)}
+                  style={{ padding: "7px 10px", background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}
+                >
+                  <i className="fa-solid fa-xmark" /> 닫기
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+                {!selectedSyncRun ? (
+                  <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>왼쪽에서 동기화 실행 이력을 선택하세요.</div>
+                ) : selectedSyncRun.changes?.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>이 실행에서 변경된 항목이 없습니다.</div>
+                ) : selectedSyncRun.changes.map(change => {
+                  const open = expandedSyncChange === change.id;
+                  return (
+                    <div key={change.id} style={{ border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 10, overflow: "hidden", background: "#fff" }}>
+                      <button
+                        onClick={() => setExpandedSyncChange(open ? null : change.id)}
+                        style={{ width: "100%", border: "none", background: "#fff", padding: 12, cursor: "pointer", textAlign: "left" }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                              <span style={{
+                                fontSize: "0.68rem", fontWeight: 800, padding: "2px 7px", borderRadius: 5,
+                                background: change.changeType === "CREATE" ? "#dcfce7" : change.changeType === "ERROR" ? "#fee2e2" : "#e0f2fe",
+                                color: change.changeType === "CREATE" ? "#15803d" : change.changeType === "ERROR" ? "#dc2626" : "#0369a1"
+                              }}>{change.changeType}</span>
+                              <strong style={{ color: "#0f172a", fontSize: "0.86rem", ...oneLineClampStyle }}>{change.title || change.seq}</strong>
+                            </div>
+                            <div style={{ color: "#64748b", fontSize: "0.74rem" }}>
+                              seq {change.seq} · 변경 필드: {change.changedFields || "-"}
+                            </div>
+                          </div>
+                          <i className={`fa-solid ${open ? "fa-chevron-up" : "fa-chevron-down"}`} style={{ color: "#64748b" }} />
+                        </div>
+                      </button>
+                      {open && (
+                        <div style={{ borderTop: "1px solid #e2e8f0", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 0 }}>
+                          <div style={{ padding: 12, background: "#f8fafc", borderRight: isMobile ? "none" : "1px solid #e2e8f0" }}>
+                            <strong style={{ display: "block", color: "#475569", fontSize: "0.78rem", marginBottom: 8 }}>변경 전</strong>
+                            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: "0.72rem", lineHeight: 1.5, color: "#334155" }}>
+                              {JSON.stringify(change.beforeData, null, 2) || "null"}
+                            </pre>
+                          </div>
+                          <div style={{ padding: 12, background: "#fff" }}>
+                            <strong style={{ display: "block", color: "#475569", fontSize: "0.78rem", marginBottom: 8 }}>변경 후</strong>
+                            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: "0.72rem", lineHeight: 1.5, color: "#334155" }}>
+                              {JSON.stringify(change.afterData, null, 2) || "null"}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

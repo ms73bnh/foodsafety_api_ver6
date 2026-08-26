@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import MultiSelectPopup from '@/components/MultiSelectPopup';
+import { downloadGeneralExport, getGeneralExportKey } from '@/lib/generalDownload';
 
 function GeneralSearchContent() {
   const router = useRouter();
@@ -50,6 +51,8 @@ function GeneralSearchContent() {
   const [catPopupOpen, setCatPopupOpen] = useState(false);
   const [packPopupOpen, setPackPopupOpen] = useState(false);
   const [formPopupOpen, setFormPopupOpen] = useState(false);
+  const [downloadState, setDownloadState] = useState({ active: false, format: null, message: '' });
+  const [downloadResume, setDownloadResume] = useState({});
 
   // Check Admin Role
   useEffect(() => {
@@ -364,9 +367,56 @@ function GeneralSearchContent() {
     }, 300);
   };
 
-  const handleDownload = (format) => {
-    const query = new URLSearchParams({ ...filters, format });
-    window.location.href = `/api/export-general?${query.toString()}`;
+  const handleDownload = async (format) => {
+    if (downloadState.active) return;
+
+    const key = getGeneralExportKey(filters, format);
+    const resumeOffset = downloadResume[key] || 0;
+    setDownloadState({
+      active: true,
+      format,
+      message: resumeOffset > 0
+        ? `${resumeOffset.toLocaleString()}행부터 이어받는 중...`
+        : '다운로드 준비 중...',
+    });
+
+    try {
+      const result = await downloadGeneralExport({
+        filters,
+        format,
+        resumeOffset,
+        onProgress: ({ offset, total, fileIndex }) => {
+          setDownloadState({
+            active: true,
+            format,
+            message: `${fileIndex}번째 파일 다운로드 중 (${offset.toLocaleString()} / ${total.toLocaleString()}행)`,
+          });
+        },
+        onResumeOffset: (offset) => {
+          setDownloadResume(prev => {
+            if (!offset) {
+              const next = { ...prev };
+              delete next[key];
+              return next;
+            }
+            return { ...prev, [key]: offset };
+          });
+        },
+      });
+
+      setDownloadState({
+        active: false,
+        format: null,
+        message: `${result.fileCount.toLocaleString()}개 파일, 총 ${result.total.toLocaleString()}행 다운로드를 완료했습니다.`,
+      });
+    } catch (error) {
+      setDownloadState({
+        active: false,
+        format: null,
+        message: `실패 지점이 저장되었습니다. 같은 버튼을 다시 누르면 이어받습니다. (${error.message})`,
+      });
+      alert(error.message);
+    }
   };
 
   return (
@@ -378,21 +428,29 @@ function GeneralSearchContent() {
           <button
             type="button"
             className="btn sync-btn"
+            disabled={downloadState.active}
             onClick={() => handleDownload('xlsx')}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)', opacity: downloadState.active ? 0.7 : 1 }}
           >
             <i className="fa-solid fa-file-excel"></i> 엑셀(XLSX) 다운로드
           </button>
           <button
             type="button"
             className="btn sync-btn"
+            disabled={downloadState.active}
             onClick={() => handleDownload('csv')}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #64748b, #475569)', border: 'none', boxShadow: '0 4px 12px rgba(100, 116, 139, 0.2)' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #64748b, #475569)', border: 'none', boxShadow: '0 4px 12px rgba(100, 116, 139, 0.2)', opacity: downloadState.active ? 0.7 : 1 }}
           >
             <i className="fa-solid fa-file-csv"></i> CSV 다운로드
           </button>
         </div>
       </div>
+      {downloadState.message && (
+        <div style={{ marginBottom: '16px', padding: '12px 16px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569', fontSize: '0.9rem' }}>
+          {downloadState.active && <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px' }}></i>}
+          {downloadState.message}
+        </div>
+      )}
 
       {/* Sync Control Center — ADMIN 전용 */}
       {isActualAdmin && <div className="glass-panel" style={{ marginBottom: '32px', background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: '1px solid #ddd6fe' }}>
