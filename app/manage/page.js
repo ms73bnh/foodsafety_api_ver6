@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import RichTextEditor from '@/components/RichTextEditor';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { downloadGeneralExport, getGeneralExportKey } from '@/lib/generalDownload';
 
 const DEFAULT_ROLES = [
   { key: 'ADMIN', label: '관리자', color: '#1d4ed8' },
@@ -47,6 +48,8 @@ function ManagePageInner() {
   const [rawGeneralPage, setRawGeneralPage] = useState(1);
   const [rawGeneralLoading, setRawGeneralLoading] = useState(false);
   const [rawGeneralSearchQuery, setRawGeneralSearchQuery] = useState('');
+  const [rawGeneralExportState, setRawGeneralExportState] = useState({ active: false, message: '' });
+  const [rawGeneralExportResume, setRawGeneralExportResume] = useState({});
 
   // ?�규 ?�태: ?�용삭제관�?  
   const [users, setUsers] = useState([]);
@@ -646,8 +649,55 @@ function ManagePageInner() {
 
   const totalGeneralPages = Math.ceil(rawGeneralTotal / 20);
 
-  const handleRawGeneralExport = () => {
-    window.location.href = `/api/export-general?format=xlsx&integrated=${rawGeneralSearchQuery}`;
+  const handleRawGeneralExport = async () => {
+    if (rawGeneralExportState.active) return;
+
+    const filters = { integrated: rawGeneralSearchQuery, sort: 'prmsDt_desc' };
+    const format = 'xlsx';
+    const key = getGeneralExportKey(filters, format);
+    const resumeOffset = rawGeneralExportResume[key] || 0;
+
+    setRawGeneralExportState({
+      active: true,
+      message: resumeOffset > 0
+        ? `${resumeOffset.toLocaleString()}행부터 이어받는 중...`
+        : 'Excel 다운로드 준비 중...',
+    });
+
+    try {
+      const result = await downloadGeneralExport({
+        filters,
+        format,
+        resumeOffset,
+        onProgress: ({ offset, total, fileIndex }) => {
+          setRawGeneralExportState({
+            active: true,
+            message: `${fileIndex}번째 Excel 파일 다운로드 중 (${offset.toLocaleString()} / ${total.toLocaleString()}행)`,
+          });
+        },
+        onResumeOffset: (offset) => {
+          setRawGeneralExportResume(prev => {
+            if (!offset) {
+              const next = { ...prev };
+              delete next[key];
+              return next;
+            }
+            return { ...prev, [key]: offset };
+          });
+        },
+      });
+
+      setRawGeneralExportState({
+        active: false,
+        message: `${result.fileCount.toLocaleString()}개 Excel 파일, 총 ${result.total.toLocaleString()}행 다운로드를 완료했습니다.`,
+      });
+    } catch (error) {
+      setRawGeneralExportState({
+        active: false,
+        message: `실패 지점이 저장되었습니다. 다시 누르면 이어받습니다. (${error.message})`,
+      });
+      alert(error.message);
+    }
   };
 
   // ?�이�?번호 계산 (Raw Data삭제
@@ -1307,8 +1357,20 @@ function ManagePageInner() {
                        style={{ padding: '8px 12px 8px 32px', fontSize: '0.85rem', width: '220px' }}
                      />
                   </div>
-                  <button onClick={handleRawGeneralExport} className="btn sync-btn" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}><i className="fa-solid fa-file-excel" style={{ marginRight: '8px' }}></i>Excel 다운로드</button>
+                  <button
+                    onClick={handleRawGeneralExport}
+                    disabled={rawGeneralExportState.active}
+                    className="btn sync-btn"
+                    style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', opacity: rawGeneralExportState.active ? 0.7 : 1 }}
+                  >
+                    <i className={`fa-solid ${rawGeneralExportState.active ? 'fa-spinner fa-spin' : 'fa-file-excel'}`} style={{ marginRight: '8px' }}></i>Excel 다운로드
+                  </button>
                </div>
+               {rawGeneralExportState.message && (
+                  <div style={{ flexBasis: '100%', padding: '10px 12px', borderRadius: '8px', background: '#fff', border: '1px solid #ddd6fe', color: '#5b21b6', fontSize: '0.85rem' }}>
+                    {rawGeneralExportState.message}
+                  </div>
+               )}
             </div>
 
             <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
