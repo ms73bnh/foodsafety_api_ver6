@@ -320,8 +320,10 @@ export async function POST(req) {
     const body = await req.json().catch(() => ({}));
     await ensureCommitteeSyncHistoryTables(prisma);
 
-    // 전체 목록 비교를 기본값으로 사용한다. 식약처 현재 목록은 약 37페이지라 50페이지면 끝까지 확인 가능.
-    const pages = Math.min(parseInt(body.pages || '50'), 80);
+    // Vercel 타임아웃(60초) 방지: 기본 3페이지(최신 30건)만 확인.
+    // 전체 363건은 full_committee_sync.js 로컬 스크립트로 이미 적재 완료.
+    // 웹 UI에서 최신 업데이트만 확인하도록 최대 10페이지로 제한.
+    const pages = Math.min(parseInt(body.pages || '3'), 10);
     const mode = body.mode || 'full';
 
     const BASE_URL = 'https://www.mfds.go.kr';
