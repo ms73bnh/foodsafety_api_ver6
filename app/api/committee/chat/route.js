@@ -1,10 +1,11 @@
 import prisma from '@/lib/prisma';
-import { getEmbedding, cosineSimilarity, streamGeminiResponse } from '@/lib/gemini';
+import { EMBEDDING_DIMENSIONS, getQueryEmbedding, cosineSimilarity } from '@/lib/e5';
+import { analyzeCommitteeQuestion, streamGeminiResponse, validateCommitteeEvidence } from '@/lib/gemini';
 import { getCurrentUser } from '@/lib/auth';
 import { DEFAULT_COMMITTEE_SYSTEM_PROMPT } from '@/lib/committeePrompt';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function todayKST() {
   const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
@@ -136,84 +137,88 @@ async function findDirectAgendaMatches(question, terms, queryVector, junkKeyword
     .slice(0, 12);
 }
 
-async function findMeetingEmbeddingMatches(question, terms, queryVector) {
-  if (queryVector.length === 0) return [];
-
-  const matches = [];
-  const batchSize = 300;
-  let cursor = 0;
-
-  while (true) {
-    const meetings = await prisma.committee_meetings.findMany({
-      where: { NOT: { contentEmbedding: null } },
-      orderBy: { id: 'desc' },
-      skip: cursor,
-      take: batchSize,
-      select: {
-        id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
-        rawContent: true, pdfContent: true, contentEmbedding: true,
-        agendas: { select: { ingredientName: true, result: true }, take: 10 },
-      },
-    });
-
-    if (meetings.length === 0) break;
-
-    for (const meeting of meetings) {
-      let score = lexicalScore([
-        meeting.title,
-        meeting.meetingNo,
-        meeting.meetingDate,
-        meeting.postDate,
-        meeting.rawContent,
-        meeting.pdfContent,
-        meeting.agendas.map(a => `${a.ingredientName} ${a.result}`).join(' '),
-      ].filter(Boolean).join('\n'), terms, question);
-      try { score += cosineSimilarity(queryVector, JSON.parse(meeting.contentEmbedding)); } catch (e) {}
-      if (meeting.meetingNo && normalizeForSearch(question).includes(normalizeForSearch(meeting.meetingNo))) score += 0.4;
-      if (score > 0.12) matches.push({ ...meeting, score });
-    }
-
-    if (meetings.length < batchSize) break;
-    cursor += meetings.length;
-  }
-
-  return matches.sort((a, b) => b.score - a.score).slice(0, 4);
-}
-
 async function findChunkMatches(question, terms, queryVector) {
   const matches = [];
-  const batchSize = 300;
-  let cursor = 0;
 
-  if (queryVector.length > 0) {
-    while (true) {
-      const chunks = await prisma.committee_chunks.findMany({
-        where: { NOT: { embedding: null } },
-        orderBy: { id: 'desc' },
-        skip: cursor,
-        take: batchSize,
-        select: {
-          id: true, meetingId: true, chunkType: true, content: true, embedding: true,
-          meeting: {
-            select: {
-              id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
-              pdfFileName: true, pdfFileUrl: true, sourceUrl: true,
+  if (queryVector.length === EMBEDDING_DIMENSIONS) {
+    let usedPgvector = false;
+    try {
+      const vectorLiteral = `[${queryVector.join(',')}]`;
+      const chunks = await prisma.$queryRawUnsafe(`
+        SELECT
+          c."id", c."meetingId", c."chunkType", c."content",
+          (1 - (c."embeddingVector" <=> $1::extensions.vector(384)))::float8 AS "vectorScore",
+          m."id" AS "mId", m."title" AS "mTitle", m."meetingNo" AS "mMeetingNo",
+          m."meetingDate" AS "mMeetingDate", m."postDate" AS "mPostDate",
+          m."pdfFileName" AS "mPdfFileName", m."pdfFileUrl" AS "mPdfFileUrl",
+          m."sourceUrl" AS "mSourceUrl"
+        FROM "committee_chunks" c
+        JOIN "committee_meetings" m ON m."id" = c."meetingId"
+        WHERE c."embeddingVector" IS NOT NULL
+        ORDER BY c."embeddingVector" <=> $1::extensions.vector(384)
+        LIMIT 40
+      `, vectorLiteral);
+
+      chunks.forEach(chunk => {
+        const meeting = {
+          id: chunk.mId,
+          title: chunk.mTitle,
+          meetingNo: chunk.mMeetingNo,
+          meetingDate: chunk.mMeetingDate,
+          postDate: chunk.mPostDate,
+          pdfFileName: chunk.mPdfFileName,
+          pdfFileUrl: chunk.mPdfFileUrl,
+          sourceUrl: chunk.mSourceUrl,
+        };
+        let score = Number(chunk.vectorScore || 0) + lexicalScore(chunk.content, terms, question);
+        if (meeting.meetingNo && normalizeForSearch(question).includes(normalizeForSearch(meeting.meetingNo))) score += 0.3;
+        if (score > 0.3) matches.push({
+          id: chunk.id,
+          meetingId: chunk.meetingId,
+          chunkType: chunk.chunkType,
+          content: chunk.content,
+          meeting,
+          score,
+        });
+      });
+      usedPgvector = true;
+    } catch (error) {
+      // RAG V2 SQL 적용 전에는 JSON 벡터 폴백을 사용합니다.
+      console.warn('pgvector chunk search unavailable; using JSON fallback:', error.message);
+    }
+
+    if (!usedPgvector) {
+      const batchSize = 300;
+      let cursor = 0;
+      while (true) {
+        const chunks = await prisma.committee_chunks.findMany({
+          where: { NOT: { embedding: null } },
+          orderBy: { id: 'desc' },
+          skip: cursor,
+          take: batchSize,
+          select: {
+            id: true, meetingId: true, chunkType: true, content: true, embedding: true, embeddingDimensions: true,
+            meeting: {
+              select: {
+                id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
+                pdfFileName: true, pdfFileUrl: true, sourceUrl: true,
+              },
             },
           },
-        },
-      });
-
-      if (chunks.length === 0) break;
-
-      for (const chunk of chunks) {
-        let score = lexicalScore(chunk.content, terms, question);
-        try { score += cosineSimilarity(queryVector, JSON.parse(chunk.embedding)); } catch (e) {}
-        if (chunk.meeting?.meetingNo && normalizeForSearch(question).includes(normalizeForSearch(chunk.meeting.meetingNo))) score += 0.3;
-        if (score > 0.3) matches.push({ ...chunk, score });
+        });
+        if (chunks.length === 0) break;
+        for (const chunk of chunks) {
+          if (chunk.embeddingDimensions && chunk.embeddingDimensions !== EMBEDDING_DIMENSIONS) continue;
+          let vector = [];
+          try { vector = JSON.parse(chunk.embedding); } catch (e) {}
+          if (vector.length !== EMBEDDING_DIMENSIONS) continue;
+          let score = lexicalScore(chunk.content, terms, question) + cosineSimilarity(queryVector, vector);
+          if (chunk.meeting?.meetingNo && normalizeForSearch(question).includes(normalizeForSearch(chunk.meeting.meetingNo))) score += 0.3;
+          if (score > 0.3) matches.push({ ...chunk, score });
+        }
+        if (chunks.length < batchSize) break;
+        cursor += chunks.length;
       }
-
-      if (chunks.length < batchSize) break;
-      cursor += chunks.length;
     }
   }
 
@@ -341,6 +346,35 @@ async function checkAndIncrementUserChatLimit(req) {
   };
 }
 
+async function createFeedbackRecord(request, data) {
+  try {
+    const user = getCurrentUser(request);
+    const row = await prisma.committee_chat_feedback.create({
+      data: {
+        question: data.question,
+        answer: data.answer || null,
+        answerStatus: data.answerStatus || 'STREAMING',
+        searchQuery: data.searchQuery || data.question,
+        keywords: data.keywords || [],
+        matchedChunkIds: data.matchedChunkIds || [],
+        references: data.references || [],
+        retrievalScore: Number.isFinite(data.retrievalScore) ? data.retrievalScore : null,
+        validationUsed: Boolean(data.validationUsed),
+        validationSupported: data.validationSupported ?? null,
+        validationConfidence: Number.isFinite(data.validationConfidence) ? data.validationConfidence : null,
+        userId: Number.isInteger(Number(user?.id)) ? Number(user.id) : null,
+        username: user?.username ? String(user.username).slice(0, 100) : null,
+      },
+      select: { id: true },
+    });
+    return row.id;
+  } catch (error) {
+    // 피드백 테이블 마이그레이션 전에도 답변 자체는 정상 제공해야 합니다.
+    console.warn('Feedback context creation unavailable:', error.message);
+    return null;
+  }
+}
+
 export async function POST(req) {
   try {
     const { question, history = [] } = await req.json();
@@ -364,9 +398,25 @@ export async function POST(req) {
 
     const cleanQuestion = question.trim();
     const lowerQ = cleanQuestion.toLowerCase();
-    const searchTerms = extractSearchTerms(cleanQuestion);
+    const localSearchTerms = extractSearchTerms(cleanQuestion);
+    let questionAnalysis = {
+      keywords: [],
+      searchQuery: cleanQuestion,
+      intent: 'general',
+      needsValidation: false,
+    };
+    try {
+      questionAnalysis = await analyzeCommitteeQuestion(cleanQuestion);
+    } catch (error) {
+      console.warn('Gemini question analysis unavailable; using local terms:', error.message);
+    }
+    const searchTerms = uniqueBy(
+      [...questionAnalysis.keywords, ...localSearchTerms]
+        .map(term => String(term).trim())
+        .filter(term => term.length >= 2),
+      term => normalizeForSearch(term),
+    ).slice(0, 12);
     let queryVector = [];
-    try { queryVector = await getEmbedding(cleanQuestion); } catch (e) {}
 
     // 0. 커스텀 시스템 프롬프트 로드 (관리자 설정 or 기본값)
     let systemInstruction;
@@ -385,9 +435,9 @@ export async function POST(req) {
     const JUNK_KEYWORDS = ['심의위원', '위원장', '참석자', '기타사항', '일시', '장소'];
 
     // 1. 질문 의도 분류
-    const isRecentQuery = /최근|최신|마지막|새로운|방금|요즘|가장 최근|최근에|최신|최근 등록|최근 게시/.test(lowerQ);
-    const isMemberQuery = /위원|명단|위원장|참석|구성원|멤버|임기/.test(lowerQ);
-    const isAgendaQuery = /심의|인정|불인정|보완|원료|성분|결과|안건/.test(lowerQ);
+    const isRecentQuery = questionAnalysis.intent === 'recent' || /최근|최신|마지막|새로운|방금|요즘|가장 최근|최근에|최신|최근 등록|최근 게시/.test(lowerQ);
+    const isMemberQuery = questionAnalysis.intent === 'member' || /위원|명단|위원장|참석|구성원|멤버|임기/.test(lowerQ);
+    const isAgendaQuery = questionAnalysis.intent === 'agenda' || /심의|인정|불인정|보완|원료|성분|결과|안건/.test(lowerQ);
     const isFunctionalityAdditionApprovedQuery =
       /기능성\s*추가/.test(cleanQuestion) &&
       /인정|승인|통과|받은/.test(cleanQuestion);
@@ -405,27 +455,14 @@ export async function POST(req) {
       });
     }
 
-    // 2. 항상 포함: 최신 회의 5건 목록 (어떤 질문이든 기본 컨텍스트)
-    const latestMeetings = await prisma.committee_meetings.findMany({
-      orderBy: { id: 'desc' },
-      take: 5,
-      include: { agendas: { select: { ingredientName: true, result: true }, take: 10 } },
-    });
-
-    // 2-1. 회의 레벨 임베딩 검색 (contentEmbedding 있는 경우)
-    let meetingEmbedContext = '';
-    try {
-      const scoredMeetings = await findMeetingEmbeddingMatches(cleanQuestion, searchTerms, queryVector);
-
-      if (scoredMeetings.length > 0) {
-        meetingEmbedContext = scoredMeetings.map((m, i) =>
-          `[회의자료 ${i + 1}] 제목: ${m.title}\n` +
-          `회차: ${m.meetingNo || '-'} | 일시: ${m.meetingDate || m.postDate || '-'}\n` +
-          (m.agendas.length ? `심의 안건 및 결과:\n${m.agendas.map(a => `  - ${a.ingredientName}: ${a.result}`).join('\n')}\n` : '') +
-          (m.pdfContent ? `PDF 요약: ${m.pdfContent.substring(0, 600)}` : '')
-        ).join('\n\n');
-      }
-    } catch (e) { /* 회의 임베딩 검색 실패 시 무시 */ }
+    // 2. 최신 목록은 최신/최근 질문일 때만 조회하여 불필요한 컨텍스트를 줄입니다.
+    const latestMeetings = isRecentQuery
+      ? await prisma.committee_meetings.findMany({
+          orderBy: { id: 'desc' },
+          take: 5,
+          include: { agendas: { select: { ingredientName: true, result: true }, take: 10 } },
+        })
+      : [];
 
     const latestMeetingsContext = latestMeetings.map((m, i) =>
       `[최신회의 ${i + 1}] ${m.title} | ${m.meetingDate || m.postDate || '-'} | 등록일: ${m.postDate || '-'}` +
@@ -473,6 +510,15 @@ export async function POST(req) {
       }
     }
 
+    // 회차/원료/최신/위원명단처럼 DB에서 확정 가능한 질문은 임베딩 API 호출을 생략합니다.
+    const hasDirectEvidence = Boolean(specificMeeting || directAgendaContext || directIngredientMatches.length > 0);
+    const needsSemanticSearch = !hasDirectEvidence && !isRecentQuery && !isMemberQuery;
+    if (needsSemanticSearch) {
+      try { queryVector = await getQueryEmbedding(questionAnalysis.searchQuery || cleanQuestion); } catch (error) {
+        console.warn('E5 query embedding unavailable; using lexical search:', error.message);
+      }
+    }
+
     // 3. 본문 키워드 검색 (위원명단·참석자 등 rawContent 필요 시)
     let rawContentContext = '';
     if (isMemberQuery || isRecentQuery) {
@@ -493,12 +539,16 @@ export async function POST(req) {
 
     // 4. 청크 임베딩 검색 (메인 RAG 검색)
     let chunkContext = '';
+    let retrievalScore = 0;
+    let matchedChunkIds = [];
 
     const chunkCount = await prisma.committee_chunks.count();
 
     if (chunkCount > 0 && (queryVector.length > 0 || searchTerms.length > 0)) {
       // 전체 청크 DB에서 임베딩 점수와 키워드 점수를 함께 계산
       const topChunks = await findChunkMatches(cleanQuestion, searchTerms, queryVector);
+      retrievalScore = Number(topChunks[0]?.score || 0);
+      matchedChunkIds = topChunks.map(chunk => chunk.id).filter(Number.isInteger);
       chunkContext = topChunks.map((c, i) => `[검색결과 ${i + 1}] (${c.chunkType})\n${c.content}`).join('\n\n');
 
       // ref 데이터용: 안건 청크에서 원료명/결과 추출
@@ -563,10 +613,77 @@ export async function POST(req) {
       directIngredientContext,
       directAgendaContext,
       rawContentContext ? `[관련 회의 본문]\n${rawContentContext}` : '',
-      meetingEmbedContext ? `[회의록 유사도 검색결과]\n${meetingEmbedContext}` : '',
       chunkContext ? `[심의 안건 검색결과]\n${chunkContext}` : '',
-      !specificMeetingContext ? `[최신 회의 목록]\n${latestMeetingsContext}` : '',
+      isRecentQuery && !specificMeetingContext && latestMeetingsContext ? `[최신 회의 목록]\n${latestMeetingsContext}` : '',
     ].filter(Boolean).join('\n\n---\n\n');
+
+    const hasVerifiedEvidence = Boolean(
+      specificMeetingContext || directIngredientContext || directAgendaContext || rawContentContext || chunkContext || latestMeetingsContext,
+    );
+
+    // 심의/안건 검색인데 근거가 하나도 없으면 생성 LLM을 호출하지 않습니다.
+    if (isAgendaQuery && !hasVerifiedEvidence) {
+      const encoder = new TextEncoder();
+      const { remaining, isAdmin: isAdminUser } = rateCheck;
+      const message = '현재 수집된 건강기능식품 위원회 게시물과 PDF에서 질문에 해당하는 근거를 찾지 못했습니다. 원료명, 회차 또는 기간을 조금 더 구체적으로 입력해 주세요.';
+      const feedbackId = await createFeedbackRecord(req, {
+        question: cleanQuestion,
+        answer: message,
+        answerStatus: 'COMPLETED',
+        searchQuery: questionAnalysis.searchQuery,
+        keywords: searchTerms,
+        matchedChunkIds,
+        references: [],
+        retrievalScore: 0,
+        validationUsed: false,
+      });
+      return new Response(encoder.encode(`__REF__:${JSON.stringify({ refs: [], remaining, isAdmin: isAdminUser, retrievalConfidence: 0, feedbackId })}\n\n${message}`), {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          'X-RateLimit-Remaining': String(remaining),
+        },
+      });
+    }
+
+    // 질문이 모호하거나 의미 검색 점수가 낮을 때만 두 번째 Gemini 검증을 수행합니다.
+    const shouldValidateEvidence = hasVerifiedEvidence && (
+      questionAnalysis.needsValidation || (needsSemanticSearch && retrievalScore > 0 && retrievalScore < 0.72)
+    );
+    let evidenceValidation = null;
+    if (shouldValidateEvidence) {
+      try {
+        evidenceValidation = await validateCommitteeEvidence(cleanQuestion, contextParts);
+      } catch (error) {
+        console.warn('Conditional evidence validation unavailable:', error.message);
+      }
+    }
+
+    if (evidenceValidation && (!evidenceValidation.supported || Number(evidenceValidation.confidence || 0) < 0.45)) {
+      const encoder = new TextEncoder();
+      const { remaining, isAdmin: isAdminUser } = rateCheck;
+      const message = '검색된 회의록이 질문을 직접 뒷받침하는지 확신하기 어렵습니다. 원료명, 회차 또는 기간을 조금 더 구체적으로 입력해 주세요.';
+      const feedbackId = await createFeedbackRecord(req, {
+        question: cleanQuestion,
+        answer: message,
+        answerStatus: 'COMPLETED',
+        searchQuery: questionAnalysis.searchQuery,
+        keywords: searchTerms,
+        matchedChunkIds,
+        references: [],
+        retrievalScore,
+        validationUsed: true,
+        validationSupported: Boolean(evidenceValidation.supported),
+        validationConfidence: Number(evidenceValidation.confidence || 0),
+      });
+      return new Response(encoder.encode(`__REF__:${JSON.stringify({ refs: [], remaining, isAdmin: isAdminUser, retrievalConfidence: evidenceValidation.confidence || 0, feedbackId })}\n\n${message}`), {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          'X-RateLimit-Remaining': String(remaining),
+        },
+      });
+    }
 
     const userPrompt = `[참고자료]:
 ${contextParts}
@@ -581,23 +698,37 @@ ${contextParts}
 
     const encoder = new TextEncoder();
     const { remaining, isAdmin: isAdminUser } = rateCheck;
+    const refData = uniqueBy(
+      topMatches,
+      m => `${m.meeting?.id || ''}:${m.ingredientName || ''}:${m.result || ''}`,
+    ).slice(0, 10).map(m => ({
+      id: m.id ?? null,
+      ingredientName: m.ingredientName ?? null,
+      result: m.result ?? null,
+      meetingNo: m.meeting?.meetingNo ?? null,
+      meetingDate: m.meeting?.meetingDate || m.meeting?.postDate || null,
+      meetingTitle: m.meeting?.title ?? null,
+      pdfFileName: m.meeting?.pdfFileName ?? null,
+      pdfFileUrl: m.meeting?.pdfFileUrl ?? null,
+    }));
+
+    const feedbackId = await createFeedbackRecord(req, {
+      question: cleanQuestion,
+      searchQuery: questionAnalysis.searchQuery,
+      keywords: searchTerms,
+      matchedChunkIds,
+      references: refData,
+      retrievalScore,
+      validationUsed: shouldValidateEvidence,
+      validationSupported: evidenceValidation ? Boolean(evidenceValidation.supported) : null,
+      validationConfidence: evidenceValidation ? Number(evidenceValidation.confidence) : null,
+    });
 
     const customReadable = new ReadableStream({
       async start(controller) {
-        const refData = uniqueBy(
-          topMatches,
-          m => `${m.meeting?.id || ''}:${m.ingredientName || ''}:${m.result || ''}`,
-        ).slice(0, 10).map(m => ({
-          id: m.id,
-          ingredientName: m.ingredientName,
-          result: m.result,
-          meetingNo: m.meeting?.meetingNo,
-          meetingDate: m.meeting?.meetingDate || m.meeting?.postDate,
-          meetingTitle: m.meeting?.title,
-          pdfFileName: m.meeting?.pdfFileName,
-          pdfFileUrl: m.meeting?.pdfFileUrl,
-        }));
-        controller.enqueue(encoder.encode(`__REF__:${JSON.stringify({ refs: refData, remaining, isAdmin: isAdminUser })}\n\n`));
+        controller.enqueue(encoder.encode(`__REF__:${JSON.stringify({ refs: refData, remaining, isAdmin: isAdminUser, feedbackId })}\n\n`));
+        let collectedAnswer = '';
+        let answerStatus = 'COMPLETED';
 
         try {
           for await (const chunk of resultStream) {
@@ -605,15 +736,26 @@ ${contextParts}
             const parts = chunk.candidates?.[0]?.content?.parts;
             if (parts) {
               for (const part of parts) {
-                if (!part.thought && part.text) controller.enqueue(encoder.encode(part.text));
+                if (!part.thought && part.text) {
+                  collectedAnswer += part.text;
+                  controller.enqueue(encoder.encode(part.text));
+                }
               }
             } else if (chunk.text) {
+              collectedAnswer += chunk.text;
               controller.enqueue(encoder.encode(chunk.text));
             }
           }
         } catch (streamErr) {
+          answerStatus = 'FAILED';
           controller.enqueue(encoder.encode(`\n[답변 스트리밍 중 오류 발생: ${streamErr.message}]`));
         } finally {
+          if (feedbackId) {
+            await prisma.committee_chat_feedback.update({
+              where: { id: feedbackId },
+              data: { answer: collectedAnswer, answerStatus },
+            }).catch(error => console.warn('Feedback answer update failed:', error.message));
+          }
           controller.close();
         }
       }

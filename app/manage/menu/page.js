@@ -99,7 +99,7 @@ export default function MenuManagePage() {
         totalProcessed += data.processed || 0;
         if (data.results) {
           data.results.forEach(r => {
-            setRebuildLog(prev => [...prev, `[${r.id}] ${r.title.substring(0, 30)}... | 본문:${r.hasRaw ? '✓' : '✗'} PDF:${r.hasPdf ? '✓' : '✗'} 임베딩:${r.hasEmbed ? '✓' : '✗'}`]);
+            setRebuildLog(prev => [...prev, `[${r.id}] ${r.title.substring(0, 30)}... | 본문:${r.hasRaw ? '✓' : '✗'} PDF:${r.hasPdf ? '✓' : '✗'}`]);
           });
         }
         if (data.done || data.processed === 0) {
@@ -222,8 +222,8 @@ export default function MenuManagePage() {
             {[
               { label: '전체 회의', value: rebuildStatus.total, color: '#0284c7' },
               { label: '본문 있음', value: rebuildStatus.hasContent, color: '#16a34a' },
-              { label: '임베딩 완료', value: rebuildStatus.hasEmbedding, color: '#7c3aed' },
-              { label: '처리 필요', value: rebuildStatus.pending, color: '#f59e0b' },
+              { label: 'PDF 있음', value: rebuildStatus.hasPdf, color: '#7c3aed' },
+              { label: '수집 필요', value: rebuildStatus.pending, color: '#f59e0b' },
             ].map(({ label, value, color }) => (
               <div key={label} style={{ flex: '1 1 120px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px 18px', textAlign: 'center' }}>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, color }}>{value ?? '-'}</div>
@@ -234,7 +234,7 @@ export default function MenuManagePage() {
         )}
 
         <div style={{ padding: '14px 18px', background: '#fefce8', border: '1px solid #fef08a', borderRadius: '8px', fontSize: '0.8rem', color: '#713f12', marginBottom: '16px' }}>
-          <strong>재구축 내용:</strong> 게시물 본문 텍스트(rawContent) 재수집, PDF 첨부파일 텍스트 추출, 회의 전체 내용 임베딩 생성.<br/>
+          <strong>재구축 내용:</strong> 게시물 본문 텍스트(rawContent) 재수집과 PDF 첨부파일 텍스트 추출. 임베딩은 RAG 청킹 화면에서 배치 처리합니다.<br/>
           HWP 파일은 바이너리 포맷으로 추출 불가 (URL만 보관). 회의 수에 따라 수분 이상 소요될 수 있습니다.
         </div>
 

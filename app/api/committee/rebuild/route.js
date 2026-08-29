@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getEmbedding } from '@/lib/gemini';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -113,18 +112,19 @@ async function extractPdfText(pdfUrl) {
 // GET: 재구축 진행 현황 조회
 export async function GET() {
   try {
-    const [total, hasContent, hasEmbedding] = await Promise.all([
+    const [total, hasContent, hasPdf, readyForChunking] = await Promise.all([
       prisma.committee_meetings.count(),
       prisma.committee_meetings.count({ where: { NOT: { rawContent: null } } }),
-      prisma.committee_meetings.count({ where: { NOT: { contentEmbedding: null } } }),
+      prisma.committee_meetings.count({ where: { NOT: { pdfContent: null } } }),
+      prisma.committee_meetings.count({ where: { OR: [{ NOT: { rawContent: null } }, { NOT: { pdfContent: null } }] } }),
     ]);
-    return NextResponse.json({ total, hasContent, hasEmbedding, pending: total - hasEmbedding });
+    return NextResponse.json({ total, hasContent, hasPdf, readyForChunking, pending: total - readyForChunking });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
 
-// POST: 배치 단위로 재크롤 + PDF 추출 + 임베딩
+// POST: 배치 단위로 재크롤 + PDF 추출 (임베딩은 청크 API에서 중복 없이 배치 처리)
 // body: { batch: 3, offset: 0, mode: 'all'|'missing' }
 export async function POST(req) {
   try {
@@ -136,7 +136,7 @@ export async function POST(req) {
     // 처리 대상 조회
     // pdfFileUrl='NONE'은 "확인 완료, PDF 없음" 마커 → 재처리 제외
     const where = mode === 'missing'
-      ? { OR: [{ rawContent: null }, { contentEmbedding: null }, { AND: [{ pdfFileUrl: null }] }] }
+      ? { OR: [{ rawContent: null }, { AND: [{ pdfFileUrl: null }] }] }
       : mode === 'pdf'
       ? { pdfFileUrl: null }  // PDF URL만 없는 것 (NONE 제외됨)
       : {};
@@ -144,14 +144,13 @@ export async function POST(req) {
     const meetings = await prisma.committee_meetings.findMany({
       where,
       orderBy: { id: 'asc' },
-      skip: offset,
+      skip: mode === 'all' ? offset : 0,
       take: batchSize,
       select: {
         id: true, seq: true, title: true, sourceUrl: true,
         meetingDate: true, postDate: true, meetingNo: true,
-        rawContent: true, pdfContent: true, contentEmbedding: true,
+        rawContent: true, pdfContent: true,
         pdfFileUrl: true,
-        agendas: { select: { ingredientName: true, result: true, agendaType: true } },
       },
     });
 
@@ -233,26 +232,6 @@ export async function POST(req) {
         pdfError = pdfFileUrl === 'NONE' ? 'PDF 없음(확인완료)' : '첨부 PDF 없음';
       }
 
-      // 3. 회의 전체 내용 임베딩 생성
-      if (!meeting.contentEmbedding || mode === 'all') {
-        const agendaSummary = meeting.agendas.map(a => `${a.ingredientName}(${a.result})`).join(', ');
-        const embedText = [
-          `제목: ${meeting.title}`,
-          `회차: ${meeting.meetingNo || ''}`,
-          `일시: ${meeting.meetingDate || meeting.postDate || ''}`,
-          agendaSummary ? `안건: ${agendaSummary}` : '',
-          rawText ? `본문: ${rawText.substring(0, 1500)}` : '',
-          pdfText ? `PDF: ${pdfText.substring(0, 1000)}` : '',
-        ].filter(Boolean).join('\n');
-
-        try {
-          const vector = await getEmbedding(embedText);
-          if (vector?.length > 0) updateData.contentEmbedding = JSON.stringify(vector);
-        } catch (e) {
-          console.warn('Meeting embedding failed:', meeting.seq, e.message);
-        }
-      }
-
       if (Object.keys(updateData).length > 0) {
         await prisma.committee_meetings.update({ where: { id: meeting.id }, data: updateData });
       }
@@ -263,7 +242,7 @@ export async function POST(req) {
         title: meeting.title,
         hasRaw: !!updateData.rawContent || !!meeting.rawContent,
         hasPdf: !!updateData.pdfContent || !!meeting.pdfContent,
-        hasEmbed: !!updateData.contentEmbedding || !!meeting.contentEmbedding,
+        readyForChunking: !!updateData.rawContent || !!meeting.rawContent || !!updateData.pdfContent || !!meeting.pdfContent,
         pdfError,
       });
     }

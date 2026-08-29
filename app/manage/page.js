@@ -2088,11 +2088,11 @@ function ManagePageInner() {
               <i className="fa-solid fa-database" style={{ marginRight: '8px', color: '#7c3aed' }}></i>심의위원회 데이터 재구축
             </h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '16px' }}>
-              게시물 본문 재수집, PDF 텍스트 추출, 회의 임베딩 생성. 누락된 항목만 처리합니다.
+              게시물 본문 재수집과 PDF 텍스트 추출만 수행합니다. 임베딩은 아래 RAG 청킹에서 중복 없이 배치 처리합니다.
             </p>
             {rebuildStatus && (
               <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                {[['전체 회의', rebuildStatus.total, '#0284c7'], ['본문 있음', rebuildStatus.hasContent, '#16a34a'], ['임베딩 완료', rebuildStatus.hasEmbedding, '#7c3aed'], ['처리 필요', rebuildStatus.pending, '#f59e0b']].map(([label, val, color]) => (
+                {[['전체 회의', rebuildStatus.total, '#0284c7'], ['본문 있음', rebuildStatus.hasContent, '#16a34a'], ['PDF 있음', rebuildStatus.hasPdf, '#7c3aed'], ['수집 필요', rebuildStatus.pending, '#f59e0b']].map(([label, val, color]) => (
                   <div key={label} style={{ flex: '1 1 100px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px', textAlign: 'center' }}>
                     <div style={{ fontSize: '1.4rem', fontWeight: 700, color }}>{val ?? '-'}</div>
                     <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>{label}</div>
@@ -2104,7 +2104,7 @@ function ManagePageInner() {
               HWP 파일은 바이너리 포맷으로 텍스트 추출 불가. PDF만 지원됩니다.
             </div>
             <button onClick={async () => {
-              if (!confirm('누락된 본문/PDF/임베딩을 재구축합니다. 진행하시겠습니까?')) return;
+              if (!confirm('누락된 본문과 PDF 텍스트를 재구축합니다. 진행하시겠습니까?')) return;
               setRebuilding(true); setRebuildLog([]);
               let offset = 0, total = 0;
               try {
@@ -2113,7 +2113,7 @@ function ManagePageInner() {
                   const data = await res.json();
                   if (data.error) { setRebuildLog(prev => [...prev, `오류: ${data.error}`]); break; }
                   total += data.processed || 0;
-                  (data.results || []).forEach(r => setRebuildLog(prev => [...prev, `[${r.id}] ${r.title?.substring(0, 28)}... | 본문:${r.hasRaw ? '✓' : '✗'} PDF:${r.hasPdf ? '✓' : r.pdfError ? `✗(${r.pdfError})` : '✗'} 임베딩:${r.hasEmbed ? '✓' : '✗'}`]));
+                  (data.results || []).forEach(r => setRebuildLog(prev => [...prev, `[${r.id}] ${r.title?.substring(0, 28)}... | 본문:${r.hasRaw ? '✓' : '✗'} PDF:${r.hasPdf ? '✓' : r.pdfError ? `✗(${r.pdfError})` : '✗'}`]));
                   if (data.done || data.processed === 0) { setRebuildLog(prev => [...prev, `완료! 총 ${total}건 처리됨`]); break; }
                   offset = data.nextOffset || (offset + 3);
                   await new Promise(r => setTimeout(r, 1000));
@@ -2142,7 +2142,7 @@ function ManagePageInner() {
             </h4>
             {chunkStatus && (
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                {[['전체 회의', chunkStatus.totalMeetings, '#0284c7'], ['청킹 완료', chunkStatus.chunkedMeetings, '#16a34a'], ['미처리', chunkStatus.pendingMeetings, '#f59e0b'], ['총 청크', chunkStatus.totalChunks, '#7c3aed'], ['임베딩 완료', chunkStatus.embeddedChunks, '#0891b2']].map(([label, val, color]) => (
+                {[['전체 회의', chunkStatus.totalMeetings, '#0284c7'], ['청킹 완료', chunkStatus.chunkedMeetings, '#16a34a'], ['미처리', chunkStatus.pendingMeetings, '#f59e0b'], ['총 청크', chunkStatus.totalChunks, '#7c3aed'], ['임베딩 완료', chunkStatus.embeddedChunks, '#0891b2'], ['임베딩 실패', chunkStatus.failedChunks, '#dc2626']].map(([label, val, color]) => (
                   <div key={label} style={{ background: '#fff', border: `1px solid ${color}22`, borderRadius: '8px', padding: '8px 14px', textAlign: 'center', minWidth: '80px' }}>
                     <div style={{ fontSize: '1.2rem', fontWeight: 800, color }}>{val ?? '-'}</div>
                     <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{label}</div>
@@ -2160,7 +2160,7 @@ function ManagePageInner() {
                   try {
                     const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 'missing' }) });
                     const data = await res.json();
-                    if (data.results) data.results.forEach(r => setChunkLog(prev => [...prev, `[${r.id}] ${r.title} → 청크:${r.chunks} 임베딩:${r.embedded}`]));
+                    if (data.results) data.results.forEach(r => setChunkLog(prev => [...prev, `[${r.id}] ${r.title} → 청크:${r.chunks} 임베딩:${r.embedded} 재사용:${r.reused || 0} API:${r.apiCalls || 0}회${r.errors?.[0] ? ` ⚠️ ${r.errors[0]}` : ''}`]));
                     done = data.done || data.processed === 0;
                     offset = data.nextOffset || offset + 3;
                   } catch (e) { setChunkLog(prev => [...prev, `오류: ${e.message}`]); done = true; }
@@ -2173,18 +2173,43 @@ function ManagePageInner() {
                 {chunking ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>진행 중...</> : <><i className="fa-solid fa-layer-group" style={{ marginRight: '6px' }}></i>누락 청킹 시작</>}
               </button>
               <button onClick={async () => {
+                if (!confirm('기존 청크를 구조 기반 V2 청크로 다시 구성합니다. 동일 내용의 768차원 임베딩은 재사용됩니다. 진행하시겠습니까?')) return;
+                setChunking(true);
+                setChunkLog(['RAG 청킹 V2 전체 재구축 시작...']);
+                let offset = 0;
+                let done = false;
+                while (!done) {
+                  try {
+                    const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 'all' }) });
+                    const data = await res.json();
+                    if (!res.ok || data.error) throw new Error(data.error || `서버 오류 (${res.status})`);
+                    (data.results || []).forEach(r => setChunkLog(prev => [...prev, `[${r.id}] ${r.title} → 청크:${r.chunks} 임베딩:${r.embedded} 재사용:${r.reused || 0} API:${r.apiCalls || 0}회${r.errors?.[0] ? ` ⚠️ ${r.errors[0]}` : ''}`]));
+                    done = data.done || data.processed === 0;
+                    offset = data.nextOffset ?? (offset + 3);
+                  } catch (e) { setChunkLog(prev => [...prev, `오류: ${e.message}`]); done = true; }
+                }
+                const status = await fetch('/api/committee/chunks').then(r => r.json()).catch(() => null);
+                if (status) setChunkStatus(status);
+                setChunkLog(prev => [...prev, `완료: RAG V${status?.chunkVersion || 2}, 목표 ${status?.chunkTargetSize || 450}자 / 중첩 ${status?.overlap || 75}자`]);
+                setChunking(false);
+              }} disabled={chunking} style={{ padding: '10px 22px', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, #f59e0b, #ea580c)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: chunking ? 0.7 : 1 }}>
+                {chunking ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>진행 중...</> : <><i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '6px' }}></i>V2 전체 재구축</>}
+              </button>
+              <button onClick={async () => {
                 setChunking(true);
                 setChunkLog(['임베딩 누락 청크 재처리 시작...']);
                 let offset = 0;
                 let done = false;
                 let totalEmbedded = 0;
+                let firstRequest = true;
                 while (!done) {
                   try {
-                    const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 're-embed' }) });
+                    const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 're-embed', retryFailed: firstRequest }) });
+                    firstRequest = false;
                     const data = await res.json();
                     totalEmbedded += data.embedded || 0;
                     const errInfo = data.errors?.length ? ` ⚠️ ${data.errors[0]}` : '';
-                    setChunkLog(prev => [...prev, `임베딩 완료 +${data.embedded || 0}개 (남은 누락: ${data.remaining ?? '-'}개)${errInfo}`]);
+                    setChunkLog(prev => [...prev, `임베딩 완료 +${data.embedded || 0}개 / API ${data.apiCalls || 0}회 / 재사용 ${data.reused || 0}개 (대기:${data.remaining ?? '-'}, 실패:${data.failed ?? '-'})${errInfo}`]);
                     done = data.done || data.processed === 0;
                     offset = data.nextOffset || offset + 15;
                   } catch (e) { setChunkLog(prev => [...prev, `오류: ${e.message}`]); done = true; }

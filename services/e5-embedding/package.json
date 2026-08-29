@@ -1,0 +1,16 @@
+{
+  "name": "foodsafety-e5-embedding",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "model:download": "node scripts/download-model.mjs",
+    "build": "npm run model:download"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

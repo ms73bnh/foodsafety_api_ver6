@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getEmbedding } from '@/lib/gemini';
 import { ensureCommitteeSyncHistoryTables } from '@/lib/committeeSyncHistory';
 
 export const dynamic = 'force-dynamic';
@@ -288,15 +287,6 @@ async function createMeetingWithAgendas(art, detail) {
   let addedAgendas = 0;
   const agendas = parseAgendas(rawText, art.title);
   for (const ag of agendas) {
-    let embeddingJson = null;
-    try {
-      const embedText = `회의: ${art.title} (일시: ${meetingDate || ''})\n원료/안건: ${ag.ingredientName} (${ag.agendaType})\n결과: ${ag.result}\n내용: ${ag.rawName}`;
-      const vector = await getEmbedding(embedText);
-      if (vector?.length > 0) embeddingJson = JSON.stringify(vector);
-    } catch (e) {
-      console.warn('Embedding failed:', ag.ingredientName, e.message);
-    }
-
     await prisma.committee_agendas.create({
       data: {
         meetingId: createdMeeting.id,
@@ -306,7 +296,8 @@ async function createMeetingWithAgendas(art, detail) {
         result: ag.result,
         agendaType: ag.agendaType,
         details: ag.details,
-        embedding: embeddingJson
+        // 안건 임베딩은 committee_chunks 배치에서 함께 생성하여 API 중복 호출을 피합니다.
+        embedding: null
       }
     });
     addedAgendas++;

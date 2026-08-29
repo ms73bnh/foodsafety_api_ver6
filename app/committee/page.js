@@ -437,7 +437,7 @@ export default function CommitteePage() {
     const newMessages = [
       ...messages,
       { role: "user", content: q },
-      { role: "assistant", content: "", references: [] },
+      { role: "assistant", content: "", references: [], feedbackId: null, feedback: null },
     ];
     setMessages(newMessages);
     setChatLoading(true);
@@ -472,31 +472,36 @@ export default function CommitteePage() {
       const decoder = new TextDecoder();
       let streamedText = "";
       let refs = [];
+      let feedbackId = null;
       let headerChecked = false;
+      let headerBuffer = "";
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
 
-        if (!headerChecked && chunk.includes("__REF__:")) {
-          const parts = chunk.split("\n\n");
-          for (const p of parts) {
-            if (p.startsWith("__REF__:")) {
-              try {
-                const parsed = JSON.parse(p.substring(8));
-                refs = parsed.refs ?? parsed;
-                if (parsed.isAdmin) {
-                  setIsAdmin(true);
-                  setRemaining(9999);
-                } else if (typeof parsed.remaining === "number") {
-                  setRemaining(parsed.remaining);
-                }
-              } catch (e) {}
-            } else {
-              streamedText += p;
-            }
+        if (!headerChecked) {
+          headerBuffer += chunk;
+          const separatorIndex = headerBuffer.indexOf("\n\n");
+          if (separatorIndex < 0) continue;
+
+          const metadataLine = headerBuffer.slice(0, separatorIndex);
+          const firstAnswerChunk = headerBuffer.slice(separatorIndex + 2);
+          if (metadataLine.startsWith("__REF__:")) {
+            try {
+              const parsed = JSON.parse(metadataLine.substring(8));
+              refs = parsed.refs ?? parsed;
+              feedbackId = parsed.feedbackId || null;
+              if (parsed.isAdmin) {
+                setIsAdmin(true);
+                setRemaining(9999);
+              } else if (typeof parsed.remaining === "number") {
+                setRemaining(parsed.remaining);
+              }
+            } catch (e) {}
           }
+          streamedText += firstAnswerChunk;
           headerChecked = true;
         } else {
           streamedText += chunk;
@@ -508,6 +513,7 @@ export default function CommitteePage() {
             ...updated[updated.length - 1],
             content: streamedText,
             references: refs,
+            feedbackId,
           };
           return updated;
         });
@@ -524,6 +530,31 @@ export default function CommitteePage() {
       });
     } finally {
       setChatLoading(false);
+    }
+  };
+
+  const handleChatFeedback = async (messageIndex, rating) => {
+    const message = messages[messageIndex];
+    if (!message?.feedbackId || message.feedbackSaving || typeof message.feedback === 'boolean') return;
+
+    setMessages(prev => prev.map((item, index) =>
+      index === messageIndex ? { ...item, feedbackSaving: true, feedbackError: "" } : item
+    ));
+    try {
+      const response = await fetch('/api/committee/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedbackId: message.feedbackId, rating }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || '평가 저장에 실패했습니다.');
+      setMessages(prev => prev.map((item, index) =>
+        index === messageIndex ? { ...item, feedback: rating, feedbackSaving: false, feedbackError: "" } : item
+      ));
+    } catch (error) {
+      setMessages(prev => prev.map((item, index) =>
+        index === messageIndex ? { ...item, feedbackSaving: false, feedbackError: error.message } : item
+      ));
     }
   };
 
@@ -798,6 +829,32 @@ export default function CommitteePage() {
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {msg.role === "assistant" && msg.feedbackId && msg.content && !(chatLoading && i === messages.length - 1) && (
+                    <div style={{ marginTop: 7, fontSize: "0.72rem", color: "#64748b", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {msg.feedback === null || typeof msg.feedback === "undefined" ? (
+                        <>
+                          <span>이 답변이 도움이 되었나요?</span>
+                          <button
+                            onClick={() => handleChatFeedback(i, true)}
+                            disabled={msg.feedbackSaving}
+                            style={{ padding: "3px 9px", borderRadius: 12, border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#15803d", cursor: "pointer", fontSize: "0.7rem", fontWeight: 700 }}
+                          >👍 Y</button>
+                          <button
+                            onClick={() => handleChatFeedback(i, false)}
+                            disabled={msg.feedbackSaving}
+                            style={{ padding: "3px 9px", borderRadius: 12, border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontSize: "0.7rem", fontWeight: 700 }}
+                          >👎 N</button>
+                          {msg.feedbackSaving && <span>저장 중...</span>}
+                          {msg.feedbackError && <span style={{ color: "#dc2626" }}>{msg.feedbackError}</span>}
+                        </>
+                      ) : (
+                        <span style={{ color: msg.feedback ? "#15803d" : "#b45309", fontWeight: 700 }}>
+                          평가가 저장되었습니다. ({msg.feedback ? "Y" : "N"})
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>

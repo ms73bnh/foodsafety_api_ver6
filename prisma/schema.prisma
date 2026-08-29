@@ -392,19 +392,31 @@ model system_settings {
 
 // 회의록 청크 테이블 - RAG용 세분화된 임베딩
 model committee_chunks {
-  id          Int                @id @default(autoincrement())
-  meetingId   Int
-  meeting     committee_meetings @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  id                  Int                @id @default(autoincrement())
+  meetingId           Int
+  meeting             committee_meetings @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
-  chunkType   String             // 'agenda' | 'pdf' | 'body'
-  content     String             @db.Text  // 청크 텍스트 (검색 대상)
-  embedding   String?            @db.Text  // JSON 벡터
-  orderIndex  Int                @default(0)
+  chunkType           String             // 'agenda' | 'pdf' | 'body'
+  content             String             @db.Text  // 청크 텍스트 (검색 대상)
+  contentHash         String?            @db.VarChar(64)
+  chunkVersion        Int                @default(2)
+  embedding           String?            @db.Text  // 하위 호환용 JSON 벡터
+  embeddingVector     Unsupported("vector(384)")?
+  embeddingModel      String?            @db.VarChar(64)
+  embeddingDimensions Int?
+  embeddingStatus     String             @default("pending") // pending | completed | failed
+  embeddingError      String?            @db.Text
+  embeddedAt          DateTime?
+  orderIndex          Int                @default(0)
 
-  createdAt   DateTime           @default(now())
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @default(now()) @updatedAt
 
   @@index([meetingId])
   @@index([chunkType])
+  @@index([contentHash])
+  @@index([embeddingStatus])
+  @@index([chunkVersion])
 }
 
 model committee_agendas {
@@ -419,12 +431,39 @@ model committee_agendas {
   agendaType   String?            // 신청 구분: "신규인정" | "기능성추가" | "기준규격" 등
   details      String?            // 안건 세부 내용 및 비고
   
-  // RAG용 768차원 Gemini Embedding 벡터 (JSON string 저장)
-  embedding    String?            // JSON.stringify(number[])
+  // 과거 안건 단위 임베딩 호환 필드. 현재 RAG는 committee_chunks의 E5 벡터를 사용합니다.
+  embedding    String?            // legacy JSON vector
 
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
   @@index([ingredientName])
   @@index([result])
+}
+
+// 위원회 AI 답변 품질 피드백. 파인튜닝에는 사용하지 않고 품질 분석용으로 축적합니다.
+model committee_chat_feedback {
+  id                   String   @id @default(uuid()) @db.Uuid
+  question             String   @db.Text
+  answer               String?  @db.Text
+  answerStatus         String   @default("STREAMING") @db.VarChar(20)
+  rating               Boolean?
+  searchQuery          String?  @db.Text
+  keywords             Json?
+  matchedChunkIds      Json?
+  references           Json?
+  retrievalScore       Float?
+  validationUsed       Boolean  @default(false)
+  validationSupported  Boolean?
+  validationConfidence Float?
+  userId               Int?
+  username             String?  @db.VarChar(100)
+  ratedAt              DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([rating])
+  @@index([answerStatus])
+  @@index([createdAt])
+  @@index([userId])
 }
