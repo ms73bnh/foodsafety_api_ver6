@@ -629,11 +629,16 @@ export async function POST(req) {
     }
 
     // 5. 컨텍스트 조합
-    // specificMeeting이 있으면 그 회의 안건을 topMatches로 덮어써서 ref 섹션에 표시
-    if (specificMeeting && specificMeeting.agendas.length > 0) {
+    // specificMeeting이 있고 안건 관련 질문인 경우 해당 회의 안건을 topMatches에 설정
+    if (specificMeeting && specificMeeting.agendas.length > 0 && !isMemberQuery && (isAgendaQuery || /결과|내용|안건|요약/.test(lowerQ))) {
       topMatches = specificMeeting.agendas
         .filter(a => !JUNK_KEYWORDS.some(k => a.ingredientName?.includes(k)))
         .map(a => ({ ...a, meeting: specificMeeting, score: 1 }));
+    }
+
+    // 위원 명단/위원장/참석자 질문일 때는 엉뚱한 안건 카드가 붙지 않도록 비움
+    if (isMemberQuery) {
+      topMatches = [];
     }
 
     const specificMeetingContext = specificMeeting
@@ -745,8 +750,8 @@ ${contextParts}
 
     const encoder = new TextEncoder();
     const { remaining, isAdmin: isAdminUser } = rateCheck;
-    const refData = uniqueBy(
-      topMatches,
+    const refData = isMemberQuery ? [] : uniqueBy(
+      topMatches.filter(m => m.ingredientName && m.ingredientName !== '-'),
       m => `${m.meeting?.id || ''}:${m.ingredientName || ''}:${m.result || ''}`,
     ).slice(0, 10).map(m => ({
       id: m.id ?? null,

@@ -43,6 +43,92 @@ const twoLineClampStyle = {
   overflowWrap: "anywhere",
 };
 
+// ── 마크다운 테이블 및 텍스트 렌더러 (GFM 테이블 지원) ──
+function MarkdownMessageView({ content }) {
+  if (!content) return null;
+
+  // 테이블 행이 줄바꿈 없이 붙어있는 경우(\n 없이 || 로 이어진 경우) 분리
+  const normalized = String(content)
+    .replace(/\|\s*\|\s*([:\-]{2,})/g, "|\n| $1")
+    .replace(/\|\s*\|\s*(?=[가-힣\w])/g, "|\n| ");
+
+  const lines = normalized.split("\n");
+  const blocks = [];
+  let currentTable = [];
+  let currentText = [];
+
+  const flushText = () => {
+    if (currentText.length > 0) {
+      blocks.push({ type: "text", content: currentText.join("\n") });
+      currentText = [];
+    }
+  };
+
+  const flushTable = () => {
+    if (currentTable.length > 0) {
+      blocks.push({ type: "table", rows: currentTable });
+      currentTable = [];
+    }
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length > 2) {
+      flushText();
+      currentTable.push(trimmed);
+    } else {
+      flushTable();
+      currentText.push(line);
+    }
+  }
+  flushText();
+  flushTable();
+
+  return (
+    <div className="md-body" style={{ lineHeight: 1.65 }}>
+      {blocks.map((block, bIdx) => {
+        if (block.type === "text") {
+          return <ReactMarkdown key={bIdx}>{block.content}</ReactMarkdown>;
+        }
+
+        const isSeparator = (r) => /^\|[\s\-:|]+\|$/.test(r);
+        const validRows = block.rows.filter(r => !isSeparator(r));
+        if (validRows.length === 0) return null;
+
+        const headerCells = validRows[0].split("|").slice(1, -1).map(c => c.trim());
+        const bodyRows = validRows.slice(1).map(r => r.split("|").slice(1, -1).map(c => c.trim()));
+
+        return (
+          <div key={bIdx} style={{ overflowX: "auto", margin: "12px 0", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem", textAlign: "left" }}>
+              <thead>
+                <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #cbd5e1" }}>
+                  {headerCells.map((th, thIdx) => (
+                    <th key={thIdx} style={{ padding: "8px 10px", fontWeight: 800, color: "#1e293b", borderRight: thIdx < headerCells.length - 1 ? "1px solid #e2e8f0" : "none", whiteSpace: "nowrap" }}>
+                      {th}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {bodyRows.map((row, rIdx) => (
+                  <tr key={rIdx} style={{ borderBottom: rIdx < bodyRows.length - 1 ? "1px solid #f1f5f9" : "none", background: rIdx % 2 === 1 ? "#f8fafc" : "#fff" }}>
+                    {row.map((td, tdIdx) => (
+                      <td key={tdIdx} style={{ padding: "7px 10px", color: "#334155", borderRight: tdIdx < row.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                        {td}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── 공통 중앙 페이지네이션 컴포넌트 (1, 2, 3... 번호형) ──
 function CenteredPagination({ current, totalPages, onChange }) {
   if (totalPages <= 1) return null;
@@ -833,7 +919,7 @@ export default function CommitteePage() {
                     {msg.content
                       ? (msg.role === "user"
                         ? <span style={{ whiteSpace: "pre-line" }}>{msg.content}</span>
-                        : <div className="md-body"><ReactMarkdown>{msg.content}</ReactMarkdown></div>)
+                        : <MarkdownMessageView content={msg.content} />)
                       : (chatLoading && i === messages.length - 1 ? "회의록 검색 및 답변 생성 중..." : "")}
                   </div>
 
