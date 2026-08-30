@@ -4,7 +4,7 @@ import { ensureCommitteeSyncHistoryTables } from '@/lib/committeeSyncHistory';
 import { extractAttachmentsFromHtml, extractPdfTextFromUrl, cleanHtmlText } from '@/lib/committeePdf';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const BASE_URL_SYNC = 'https://www.mfds.go.kr';
 
@@ -68,12 +68,16 @@ export async function fetchArticlesFromPage(pageNum, headers, BASE_URL) {
   if (!resp.ok) return [];
   const html = await resp.text();
 
-  // <li> 블록 단위로 분할하여 각 게시물의 메타데이터 파싱
-  const liBlocks = html.split(/<li\s+class=["'](?:bbs_list|board_list)?/gi).slice(1);
+  // <div class="num"> 기준으로 각 게시글 청크 분할 (가장 정확한 파싱 방식)
+  const chunks = html.split(/<div\s+class=["']num["']\s*>/i);
+  if (chunks.length <= 1) return [];
+
   const articles = [];
 
-  for (const block of liBlocks) {
-    const linkMatch = block.match(/<a\s+[^>]*href=["']([^"']*view\.do\?[^"']*)["'][^>]*class=["']title["'][^>]*>([\s\S]*?)<\/a>/i);
+  for (let i = 1; i < chunks.length; i++) {
+    const chunk = chunks[i];
+
+    const linkMatch = chunk.match(/<a\s+[^>]*href=["']([^"']*view\.do\?[^"']*)["'][^>]*class=["']title["'][^>]*>([\s\S]*?)<\/a>/i);
     if (!linkMatch) continue;
 
     const rawHref = linkMatch[1].replace(/&amp;/g, '&');
@@ -82,33 +86,28 @@ export async function fetchArticlesFromPage(pageNum, headers, BASE_URL) {
     if (!seq) continue;
 
     const title = cleanText(linkMatch[2]).trim();
-    if (!title || (!title.includes('건강기능식품') && !title.includes('심의') && !title.includes('회의') && !title.includes('위원'))) {
+    if (!title || (!title.includes('건강기능식품') && !title.includes('심의') && !title.includes('회의') && !title.includes('위원') && !title.includes('재평가'))) {
       continue;
     }
 
     const fullHref = rawHref.startsWith('http') ? rawHref : `${BASE_URL}/brd/m_532/${rawHref.replace(/^\.\//, '')}`;
 
-    // 게시물 번호 (예: 359)
-    const numMatch = block.match(/<div class=["']num["']>([\s\S]*?)<\/div>/i);
-    const postNo = numMatch ? numMatch[1].replace(/<[^>]+>/g, '').trim() : null;
+    const numMatch = chunk.match(/^\s*(\d+)\s*<\/div>/i);
+    const postNo = numMatch ? numMatch[1].trim() : null;
 
-    // 담당부서 (예: 영양기능연구과)
-    const deptMatch = block.match(/담당부서\s*\|\s*([가-힣]+과|[가-힣]+팀|[가-힣]+부)/i) ||
-                      block.match(/담당부서[\s\S]*?\|\s*([가-힣]+과|[가-힣]+팀)/i);
+    const deptMatch = chunk.match(/담당부서\s*\|\s*([가-힣]+과|[가-힣]+팀|[가-힣]+부)/i) ||
+                      chunk.match(/담당부서[\s\S]*?\|\s*([가-힣]+과|[가-힣]+팀)/i);
     const department = deptMatch ? deptMatch[1].trim() : '영양기능연구과';
 
-    // 조회수 (예: 2126)
-    const viewMatch = block.match(/조회수\s*\|\s*(\d+)/i);
+    const viewMatch = chunk.match(/조회수\s*\|\s*(\d+)/i);
     const viewCount = viewMatch ? parseInt(viewMatch[1], 10) : null;
 
-    // 등록일 (예: 2026-07-07)
-    const dateMatch = block.match(/<div class=["']date_column["']>([\s\S]*?)<\/div>/i) ||
-                      block.match(/(\d{4}-\d{2}-\d{2})/);
-    const postDate = dateMatch ? dateMatch[1].replace(/<[^>]+>/g, '').trim() : null;
+    const dateMatch = chunk.match(/<div class=["']date_column["']>([\s\S]*?)<\/div>/i) ||
+                      chunk.match(/(\d{4}-\d{2}-\d{2})/);
+    const postDate = dateMatch ? (dateMatch[1] || dateMatch[0]).replace(/<[^>]+>/g, '').trim() : null;
 
-    // 첨부파일 (PDF & HWP)
     const listPageBase = `${BASE_URL_SYNC}/brd/m_532/`;
-    const attachments = extractAttachmentsFromHtml(block, listPageBase);
+    const attachments = extractAttachmentsFromHtml(chunk, listPageBase);
 
     articles.push({
       seq,
@@ -255,7 +254,8 @@ export async function POST(req) {
     const body = await req.json().catch(() => ({}));
     await ensureCommitteeSyncHistoryTables(prisma);
 
-    const pages = Math.min(parseInt(body.pages || '3'), 10);
+    // 전체 페이지 스캔: 기본 40페이지 (전체 회의록 전수 검사)
+    const maxPages = Math.min(Math.max(parseInt(body.pages || '40'), 1), 50);
     const mode = body.mode || 'full';
 
     const BASE_URL = 'https://www.mfds.go.kr';
@@ -265,7 +265,7 @@ export async function POST(req) {
     };
 
     const syncRun = await prisma.committee_sync_runs.create({
-      data: { mode, pagesRequested: pages, status: 'RUNNING' },
+      data: { mode, pagesRequested: maxPages, status: 'RUNNING' },
     });
 
     let pagesFetched = 0;
@@ -274,11 +274,14 @@ export async function POST(req) {
     let addedAgendas = 0;
     let updatedMeetings = 0;
     let unchangedMeetings = 0;
+    let pdfExtractedCount = 0;
 
     try {
-      for (let page = 1; page <= pages; page++) {
+      for (let page = 1; page <= maxPages; page++) {
         const articles = await fetchArticlesFromPage(page, headers, BASE_URL);
-        if (articles.length === 0) break;
+        if (!articles || articles.length === 0) {
+          break; // 더 이상 게시물이 없으면 종료
+        }
         pagesFetched++;
 
         for (const art of articles) {
@@ -288,12 +291,14 @@ export async function POST(req) {
             include: { agendas: { select: { id: true }, take: 1 } },
           });
 
+          // 1. 신규 게시글인 경우 -> 상세 정보 + PDF 본문 + 안건 일괄 생성
           if (!existing) {
             try {
               const detail = await fetchDetailForArticle(art, headers);
               const { meeting, addedAgendas: agendaCount } = await createMeetingWithAgendas(art, detail);
               addedMeetings++;
               addedAgendas += agendaCount;
+              if (detail?.pdfContent) pdfExtractedCount++;
 
               await prisma.committee_sync_changes.create({
                 data: {
@@ -307,6 +312,7 @@ export async function POST(req) {
                   afterData: {
                     meeting: pickComparableMeetingFields({ ...art, sourceUrl: art.href }),
                     agendaCount,
+                    hasPdfContent: Boolean(detail?.pdfContent),
                   },
                 },
               });
@@ -325,17 +331,35 @@ export async function POST(req) {
             continue;
           }
 
+          // 2. 기존 게시글인 경우 -> 변경사항 대조 + 누락 데이터(PDF/안건/본문) 백필
           const beforeData = pickComparableMeetingFields(existing);
           const afterCandidate = pickComparableMeetingFields({
             ...art,
             sourceUrl: art.href,
             meetingNo: existing.meetingNo || getMeetingNo(art.title),
           });
+
+          // 상세 페이지 조회 여부 판단 (본문이 없거나, PDF URL이 비어있는 경우)
+          let detail = null;
+          if (!existing.rawContent || (!existing.pdfFileUrl && !art.pdfFileUrl)) {
+            detail = await fetchDetailForArticle(art, headers);
+            if (detail?.pdfFileUrl) {
+              afterCandidate.pdfFileName = detail.pdfFileName;
+              afterCandidate.pdfFileUrl = detail.pdfFileUrl;
+            }
+            if (detail?.hwpFileUrl) {
+              afterCandidate.hwpFileName = detail.hwpFileName;
+              afterCandidate.hwpFileUrl = detail.hwpFileUrl;
+            }
+          }
+
           const changes = diffObjects(beforeData, afterCandidate);
           const changedFields = Object.keys(changes);
-          const needsAgendaBackfill = existing.agendas.length === 0 && existing.rawContent;
+          const needsAgendaBackfill = existing.agendas.length === 0 && (existing.rawContent || detail?.rawText);
+          const needsPdfContentBackfill = !existing.pdfContent && (afterCandidate.pdfFileUrl || existing.pdfFileUrl);
+          const needsRawContentBackfill = !existing.rawContent && detail?.rawText;
 
-          if (changedFields.length === 0 && !needsAgendaBackfill) {
+          if (changedFields.length === 0 && !needsAgendaBackfill && !needsPdfContentBackfill && !needsRawContentBackfill) {
             unchangedMeetings++;
             continue;
           }
@@ -347,11 +371,16 @@ export async function POST(req) {
             else updateData[field] = afterCandidate[field];
           }
           if (!existing.meetingNo && afterCandidate.meetingNo) updateData.meetingNo = afterCandidate.meetingNo;
+          if (needsRawContentBackfill && detail?.rawText) updateData.rawContent = detail.rawText.substring(0, 8000);
 
-          // 만약 PDF 파일 링크가 새로 생겼거나 변경되었고 pdfContent가 없다면 텍스트 추출 시도
-          if (updateData.pdfFileUrl && !existing.pdfContent) {
-            const pdfText = await extractPdfTextFromUrl(updateData.pdfFileUrl, art.href);
-            if (pdfText) updateData.pdfContent = pdfText;
+          // PDF 본문 텍스트 백필
+          if (needsPdfContentBackfill) {
+            const targetPdfUrl = afterCandidate.pdfFileUrl || existing.pdfFileUrl;
+            const pdfText = detail?.pdfContent || await extractPdfTextFromUrl(targetPdfUrl, art.href);
+            if (pdfText) {
+              updateData.pdfContent = pdfText;
+              pdfExtractedCount++;
+            }
           }
 
           if (Object.keys(updateData).length > 0) {
@@ -361,9 +390,11 @@ export async function POST(req) {
             });
           }
 
+          // 안건 백필
           let backfilledAgendas = 0;
           if (needsAgendaBackfill) {
-            const agendas = parseAgendas(existing.rawContent, art.title);
+            const sourceText = existing.rawContent || detail?.rawText || '';
+            const agendas = parseAgendas(sourceText, art.title);
             for (const ag of agendas) {
               await prisma.committee_agendas.create({
                 data: {
@@ -387,19 +418,22 @@ export async function POST(req) {
               runId: syncRun.id,
               meetingId: existing.id,
               seq: art.seq,
-              changeType: changedFields.length > 0 ? 'UPDATE' : 'AGENDA_BACKFILL',
+              changeType: changedFields.length > 0 ? 'UPDATE' : (needsPdfContentBackfill ? 'PDF_BACKFILL' : 'AGENDA_BACKFILL'),
               title: art.title,
               changedFields: [
                 ...changedFields,
                 ...(backfilledAgendas > 0 ? ['agendas'] : []),
+                ...(updateData.pdfContent ? ['pdfContent'] : []),
               ].join(','),
               beforeData: {
                 meeting: beforeData,
                 agendaCount: existing.agendas.length,
+                hasPdfContent: Boolean(existing.pdfContent),
               },
               afterData: {
                 meeting: { ...beforeData, ...updateData },
                 agendaCount: existing.agendas.length + backfilledAgendas,
+                hasPdfContent: Boolean(existing.pdfContent || updateData.pdfContent),
                 changes,
               },
             },
@@ -407,10 +441,11 @@ export async function POST(req) {
         }
       }
 
-      const [totalMeetings, totalAgendas, embeddedAgendas] = await Promise.all([
+      const [totalMeetings, totalAgendas, pdfMeetings, pdfContentMeetings] = await Promise.all([
         prisma.committee_meetings.count(),
         prisma.committee_agendas.count(),
-        prisma.committee_agendas.count({ where: { NOT: { embedding: null } } }),
+        prisma.committee_meetings.count({ where: { pdfFileUrl: { not: null } } }),
+        prisma.committee_meetings.count({ where: { pdfContent: { not: null } } }),
       ]);
 
       await prisma.committee_sync_runs.update({
@@ -430,7 +465,7 @@ export async function POST(req) {
       return NextResponse.json({
         success: true,
         runId: syncRun.id,
-        message: `전체 비교 동기화 완료: ${scannedCount}건 확인 / 신규 ${addedMeetings}건 / 변경 ${updatedMeetings}건 / 동일 ${unchangedMeetings}건`,
+        message: `전체 전수 비교 동기화 완료: ${scannedCount}건 확인 (${pagesFetched}페이지) / 신규 ${addedMeetings}건 / 갱신 및 백필 ${updatedMeetings}건 / 동일 ${unchangedMeetings}건 (PDF 텍스트 추출: ${pdfExtractedCount}건)`,
         pagesFetched,
         scannedCount,
         addedMeetings,
@@ -439,7 +474,8 @@ export async function POST(req) {
         addedAgendas,
         totalMeetings,
         totalAgendas,
-        embeddedAgendas,
+        pdfMeetings,
+        pdfContentMeetings,
       });
     } catch (runError) {
       await prisma.committee_sync_runs.update({
