@@ -2090,7 +2090,7 @@ function ManagePageInner() {
             </h4>
             {chunkStatus && (
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                [
+                {[
                   ['전체 회의', chunkStatus.totalMeetings, '#0284c7'],
                   ['청킹 완료', chunkStatus.chunkedMeetings, '#16a34a'],
                   ['미처리', chunkStatus.pendingMeetings, '#f59e0b'],

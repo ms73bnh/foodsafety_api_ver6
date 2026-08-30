@@ -128,7 +128,10 @@ async function findDirectAgendaMatches(question, terms, queryVector, junkKeyword
 
   const agendas = await prisma.committee_agendas.findMany({
     where: { OR: or },
-    orderBy: { id: 'desc' },
+    orderBy: [
+      { meeting: { postDate: 'desc' } },
+      { id: 'desc' },
+    ],
     take: 50,
     include: {
       meeting: {
@@ -482,12 +485,15 @@ export async function POST(req) {
       });
     }
 
-    // 2. 최신 목록은 최신/최근 질문일 때만 조회하여 불필요한 컨텍스트를 줄입니다.
+    // 2. 최신 목록은 최신/최근 질문일 때 식약처 공시 등록일(postDate) 기준 최신 회의들을 조회합니다.
     const latestMeetings = isRecentQuery
       ? await prisma.committee_meetings.findMany({
-          orderBy: { id: 'desc' },
-          take: 5,
-          include: { agendas: { select: { ingredientName: true, result: true }, take: 10 } },
+          orderBy: [
+            { postDate: 'desc' },
+            { id: 'desc' },
+          ],
+          take: 8,
+          include: { agendas: { select: { ingredientName: true, result: true, agendaType: true }, take: 10 } },
         })
       : [];
 
@@ -505,7 +511,7 @@ export async function POST(req) {
         directIngredientMatches.map(agendaToContextLine).join('\n');
     }
 
-    // 2-3. 자주 묻는 정형 질문: 최근 기능성 추가 + 인정 안건은 임베딩보다 DB 조건 검색이 정확함
+    // 2-3. 자주 묻는 정형 질문: 최근 기능성 추가 + 인정 안건은 최신 공시일자(postDate) 기준 검색
     let directAgendaContext = '';
     if (isFunctionalityAdditionApprovedQuery) {
       const directAgendas = await prisma.committee_agendas.findMany({
@@ -514,7 +520,10 @@ export async function POST(req) {
           agendaType: { contains: '기능성' },
           ingredientName: { not: '' },
         },
-        orderBy: { id: 'desc' },
+        orderBy: [
+          { meeting: { postDate: 'desc' } },
+          { id: 'desc' },
+        ],
         take: 12,
         include: {
           meeting: {
@@ -537,9 +546,9 @@ export async function POST(req) {
       }
     }
 
-    // 회차/원료/최신/위원명단처럼 DB에서 확정 가능한 질문은 임베딩 API 호출을 생략합니다.
-    const hasDirectEvidence = Boolean(specificMeeting || directAgendaContext || directIngredientMatches.length > 0);
-    const needsSemanticSearch = !hasDirectEvidence && !isRecentQuery && !isMemberQuery;
+    // 의미 검색(Semantic Search): 질문에 대한 벡터 임베딩을 계산하여 최고 품질의 RAG 컨텍스트를 구성합니다.
+    const hasDirectEvidence = Boolean(specificMeeting && directIngredientMatches.length > 0);
+    const needsSemanticSearch = !hasDirectEvidence;
     if (needsSemanticSearch) {
       try { queryVector = await getQueryEmbedding(questionAnalysis.searchQuery || cleanQuestion); } catch (error) {
         console.warn('E5 query embedding unavailable; using lexical search:', error.message);
@@ -552,8 +561,11 @@ export async function POST(req) {
       const keywords = cleanQuestion.split(/[\s,]+/).filter(k => k.length >= 2);
       const found = await prisma.committee_meetings.findMany({
         where: keywords.length ? { OR: keywords.map(k => ({ rawContent: { contains: k } })) } : {},
-        orderBy: { id: 'desc' },
-        take: 3,
+        orderBy: [
+          { postDate: 'desc' },
+          { id: 'desc' },
+        ],
+        take: 5,
         select: { title: true, meetingNo: true, meetingDate: true, postDate: true, rawContent: true },
       }).catch(() => []);
 

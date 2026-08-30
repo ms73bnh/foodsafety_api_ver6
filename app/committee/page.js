@@ -379,31 +379,6 @@ export default function CommitteePage() {
     }
   };
 
-  const fetchSyncHistory = async (runId) => {
-    setSyncHistoryLoading(true);
-    try {
-      const url = runId ? `/api/committee/sync-history?runId=${runId}` : "/api/committee/sync-history?limit=20";
-      const res = await fetch(url);
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error || "이력 조회 실패");
-      if (runId) {
-        setSelectedSyncRun(json.data);
-        setExpandedSyncChange(null);
-      } else {
-        setSyncRuns(json.data || []);
-        if (!selectedSyncRun && json.data?.[0]?.id) {
-          await fetchSyncHistory(json.data[0].id);
-        }
-      }
-    } catch (e) {
-      alert("동기화 이력 조회 오류: " + e.message);
-    } finally {
-      setSyncHistoryLoading(false);
-    }
-  };
-
-  const openSyncHistory = async () => {
-  };
 
   const fetchSyncHistory = async (runId) => {
     setSyncHistoryLoading(true);
