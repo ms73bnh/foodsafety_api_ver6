@@ -13,6 +13,7 @@ import {
   chunkContentHash,
   splitIntoSemanticChunks,
 } from '@/lib/committeeChunks';
+import { extractPdfTextFromUrl } from '@/lib/committeePdf';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -224,6 +225,21 @@ export async function POST(req) {
 
   const results = [];
   for (const meeting of meetings) {
+    if (!meeting.pdfContent && meeting.pdfFileUrl) {
+      try {
+        const text = await extractPdfTextFromUrl(meeting.pdfFileUrl, meeting.sourceUrl);
+        if (text) {
+          meeting.pdfContent = text;
+          await prisma.committee_meetings.update({
+            where: { id: meeting.id },
+            data: { pdfContent: text },
+          });
+        }
+      } catch (pdfErr) {
+        console.warn(`[Chunks PDF text fetch error for meeting ${meeting.id}]:`, pdfErr.message);
+      }
+    }
+
     const chunks = buildMeetingChunks(meeting);
     const reusable = await reusableEmbeddingMap(chunks.map(chunk => chunk.contentHash));
     const { rows, errors, apiCalls } = await resolveEmbeddings(chunks, reusable);

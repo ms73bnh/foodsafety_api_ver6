@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const pdfParse = require('pdf-parse');
 
 const prisma = new PrismaClient({
   datasources: {
@@ -11,7 +12,7 @@ const prisma = new PrismaClient({
 const BASE_URL_SYNC = 'https://www.mfds.go.kr';
 
 function cleanText(text = '') {
-  return text
+  return String(text || '')
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
     .replace(/<br\s*[\/]?>/gi, '\n')
@@ -33,36 +34,129 @@ function cleanText(text = '') {
     .replace(/&copy;/gi, '©')
     .replace(/&trade;/gi, '™')
     .replace(/\r\n|\r/g, '\n')
-    .replace(/\n{3,}/g, '\n\n');
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
-function findFileLink(src, extPat, baseUrl) {
+function extractAttachmentsFromHtml(html = '', baseUrl = `${BASE_URL_SYNC}/brd/m_532/`) {
+  let pdfFileName = null;
+  let pdfFileUrl = null;
+  let hwpFileName = null;
+  let hwpFileUrl = null;
+
+  const resolveUrl = (raw) => {
+    if (!raw) return null;
+    const unescaped = raw.replace(/&amp;/g, '&').trim();
+    if (unescaped.startsWith('http')) return unescaped;
+    if (unescaped.startsWith('./')) return `${baseUrl}${unescaped.slice(2)}`;
+    return `${BASE_URL_SYNC}${unescaped.startsWith('/') ? '' : '/'}${unescaped}`;
+  };
+
+  // 1. 목록 페이지 구조 (bbs_file_list > li > bbs_file_list_header > span + bbs_icon_filedown)
+  const listPattern = /<li[^>]*>[\s\S]*?<div\s+class=["']bbs_file_list_header["'][^>]*>[\s\S]*?<span>([\s\S]*?)<\/span>[\s\S]*?<\/div>[\s\S]*?<a\s+[^>]*href=["']([^"']*)["'][^>]*class=["'][^"']*bbs_icon_filedown[^"']*["']/gi;
   let m;
-  const downRe = /<a\s+[^>]*href=["']([^"']*down\.do\?[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  while ((m = downRe.exec(src)) !== null) {
-    const linkText = m[2].replace(/<[^>]+>/g, '').trim();
-    const raw = m[1].replace(/&amp;/g, '&');
-    let matchedName = extPat.test(linkText) ? linkText : null;
-    if (!matchedName) {
-      const ctx = src.substring(m.index, m.index + m[0].length + 300);
-      const fnMatch = ctx.match(/[\w가-힣()[\]\-_ ]+\.(?:pdf|hwp|hwpx|PDF|HWP)/);
-      if (fnMatch && extPat.test(fnMatch[0])) matchedName = fnMatch[0].trim();
-    }
-    if (!matchedName && /file_seq=\d+/i.test(raw)) matchedName = extPat.source.includes('pdf') ? '첨부파일.pdf' : '첨부파일.hwp';
-    if (matchedName) {
-      const url = raw.startsWith('http') ? raw : raw.startsWith('./') ? `${baseUrl}${raw.slice(2)}` : `${BASE_URL_SYNC}${raw.startsWith('/') ? '' : '/'}${raw}`;
-      return { url, name: matchedName };
-    }
-  }
-  const fdRe = /<a\s+[^>]*href=["']([^"']*(?:FileDown|fileDown)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  while ((m = fdRe.exec(src)) !== null) {
-    const text = m[2].replace(/<[^>]+>/g, '').trim();
-    if (extPat.test(text) || extPat.test(m[1])) {
-      const url = m[1].startsWith('http') ? m[1] : `${BASE_URL_SYNC}${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
-      return { url, name: text };
+  while ((m = listPattern.exec(html)) !== null) {
+    const rawName = cleanText(m[1]);
+    const rawHref = m[2];
+    const fullUrl = resolveUrl(rawHref);
+
+    if (/\.pdf$/i.test(rawName) || rawHref.toLowerCase().includes('.pdf')) {
+      if (!pdfFileUrl) {
+        pdfFileName = rawName;
+        pdfFileUrl = fullUrl;
+      }
+    } else if (/\.(?:hwp|hwpx)$/i.test(rawName) || rawHref.toLowerCase().includes('.hwp')) {
+      if (!hwpFileUrl) {
+        hwpFileName = rawName;
+        hwpFileUrl = fullUrl;
+      }
     }
   }
-  return { url: null, name: null };
+
+  // 2. 상세 페이지 구조 (bbs_file_cont > strong + a.bbs_icon_filedown)
+  if (!pdfFileUrl || !hwpFileUrl) {
+    const viewPattern = /<div\s+class=["']bbs_file_cont["'][^>]*>[\s\S]*?<strong>([\s\S]*?)<\/strong>[\s\S]*?<a\s+[^>]*href=["']([^"']*)["'][^>]*class=["'][^"']*bbs_icon_filedown[^"']*["']/gi;
+    while ((m = viewPattern.exec(html)) !== null) {
+      const rawName = cleanText(m[1]);
+      const rawHref = m[2];
+      const fullUrl = resolveUrl(rawHref);
+
+      if (/\.pdf$/i.test(rawName) || rawHref.toLowerCase().includes('.pdf')) {
+        if (!pdfFileUrl) {
+          pdfFileName = rawName;
+          pdfFileUrl = fullUrl;
+        }
+      } else if (/\.(?:hwp|hwpx)$/i.test(rawName) || rawHref.toLowerCase().includes('.hwp')) {
+        if (!hwpFileUrl) {
+          hwpFileName = rawName;
+          hwpFileUrl = fullUrl;
+        }
+      }
+    }
+  }
+
+  // 3. Fallback: 일반 a 태그 down.do 또는 FileDown.do 링크
+  if (!pdfFileUrl || !hwpFileUrl) {
+    const generalPattern = /<a\s+[^>]*href=["']([^"']*(?:down\.do|FileDown\.do)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    while ((m = generalPattern.exec(html)) !== null) {
+      const rawHref = m[1];
+      const linkText = cleanText(m[2]);
+      const fullUrl = resolveUrl(rawHref);
+
+      const startIdx = Math.max(0, m.index - 200);
+      const endIdx = Math.min(html.length, m.index + m[0].length + 200);
+      const ctx = html.substring(startIdx, endIdx);
+      const fnMatch = ctx.match(/[\w가-힣()[\]\-_ .]+\.(?:pdf|hwp|hwpx|PDF|HWP|HWPX)/i);
+      const detectedName = fnMatch ? fnMatch[0].trim() : linkText;
+
+      if (/\.pdf$/i.test(detectedName) || detectedName.includes('.pdf') || rawHref.toLowerCase().includes('.pdf')) {
+        if (!pdfFileUrl) {
+          pdfFileName = detectedName || '첨부파일.pdf';
+          pdfFileUrl = fullUrl;
+        }
+      } else if (/\.(?:hwp|hwpx)$/i.test(detectedName) || detectedName.includes('.hwp') || rawHref.toLowerCase().includes('.hwp')) {
+        if (!hwpFileUrl) {
+          hwpFileName = detectedName || '첨부파일.hwp';
+          hwpFileUrl = fullUrl;
+        }
+      }
+    }
+  }
+
+  return { pdfFileName, pdfFileUrl, hwpFileName, hwpFileUrl };
+}
+
+async function extractPdfText(pdfUrl, refererUrl = BASE_URL_SYNC) {
+  if (!pdfUrl || pdfUrl === 'NONE') return null;
+
+  try {
+    const resp = await fetch(pdfUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        Referer: refererUrl,
+      },
+      signal: AbortSignal.timeout(25000),
+    });
+
+    if (!resp.ok) return null;
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    if (buffer.slice(0, 4).toString('ascii') !== '%PDF') return null;
+
+    const parsed = await pdfParse(buffer);
+    const rawText = parsed.text || '';
+    const clean = rawText
+      .replace(/\r\n|\r/g, '\n')
+      .replace(/[\t\u00a0]+/g, ' ')
+      .replace(/[ ]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    return clean.length > 30 ? clean : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 function parseAgendas(rawContent = '', meetingTitle = '') {
@@ -129,7 +223,6 @@ async function fetchAllArticles(headers) {
     if (!resp.ok) break;
     const html = await resp.text();
 
-    // 청크 분할: <div class="num"> 기준으로 각 게시글 나누기
     const chunks = html.split(/<div\s+class=["']num["']\s*>/i);
     if (chunks.length <= 1) {
       console.log(`Page ${page}: no more chunks.`);
@@ -149,7 +242,6 @@ async function fetchAllArticles(headers) {
       if (!seq) continue;
 
       const title = cleanText(linkMatch[2]).trim();
-      // 건강기능식품 관련 게시글 필터링
       if (!title || (!title.includes('건강기능식품') && !title.includes('심의') && !title.includes('회의') && !title.includes('위원') && !title.includes('재평가'))) {
         continue;
       }
@@ -171,14 +263,7 @@ async function fetchAllArticles(headers) {
       const postDate = dateMatch ? (dateMatch[1] || dateMatch[0]).replace(/<[^>]+>/g, '').trim() : null;
 
       const listPageBase = `${BASE_URL_SYNC}/brd/m_532/`;
-      let pdfFileName = null, pdfFileUrl = null;
-      let hwpFileName = null, hwpFileUrl = null;
-
-      const pdfResult = findFileLink(chunk, /\.pdf/i, listPageBase);
-      if (pdfResult.url) { pdfFileUrl = pdfResult.url; pdfFileName = pdfResult.name; }
-
-      const hwpResult = findFileLink(chunk, /\.(?:hwp|hwpx)/i, listPageBase);
-      if (hwpResult.url) { hwpFileUrl = hwpResult.url; hwpFileName = hwpResult.name; }
+      const attachments = extractAttachmentsFromHtml(chunk, listPageBase);
 
       allArticles.push({
         seq,
@@ -188,10 +273,10 @@ async function fetchAllArticles(headers) {
         department,
         viewCount,
         postDate,
-        pdfFileName,
-        pdfFileUrl,
-        hwpFileName,
-        hwpFileUrl
+        pdfFileName: attachments.pdfFileName,
+        pdfFileUrl: attachments.pdfFileUrl,
+        hwpFileName: attachments.hwpFileName,
+        hwpFileUrl: attachments.hwpFileUrl
       });
       pageCount++;
     }
@@ -218,17 +303,24 @@ async function fetchDetailForArticle(art, headers) {
     let hwpFileUrl = art.hwpFileUrl;
 
     const detailBase = art.href.substring(0, art.href.lastIndexOf('/') + 1);
-    if (!pdfFileUrl) {
-      const r = findFileLink(detailHtml, /\.pdf/i, detailBase);
-      if (r.url) { pdfFileUrl = r.url; pdfFileName = r.name; }
+    const detailAttachments = extractAttachmentsFromHtml(detailHtml, detailBase);
+    if (!pdfFileUrl && detailAttachments.pdfFileUrl) {
+      pdfFileUrl = detailAttachments.pdfFileUrl;
+      pdfFileName = detailAttachments.pdfFileName;
     }
-    if (!hwpFileUrl) {
-      const r = findFileLink(detailHtml, /\.(?:hwp|hwpx)/i, detailBase);
-      if (r.url) { hwpFileUrl = r.url; hwpFileName = r.name; }
+    if (!hwpFileUrl && detailAttachments.hwpFileUrl) {
+      hwpFileUrl = detailAttachments.hwpFileUrl;
+      hwpFileName = detailAttachments.hwpFileName;
+    }
+
+    let pdfContent = null;
+    if (pdfFileUrl) {
+      pdfContent = await extractPdfText(pdfFileUrl, art.href);
     }
 
     return {
       rawText,
+      pdfContent,
       meetingDate: meetingDateMatch ? meetingDateMatch[1].trim() : art.postDate,
       attendees: attendeesMatch ? attendeesMatch[1].trim() : null,
       pdfFileName,
@@ -247,15 +339,19 @@ async function main() {
     'Accept-Language': 'ko-KR,ko;q=0.9',
   };
 
-  console.log('=== 1. Scanning ALL MFDS committee pages ===');
+  console.log('=== 1. Scanning ALL MFDS committee pages (with accurate attachment parsing) ===');
   const articles = await fetchAllArticles(headers);
   console.log(`\n=== Total ${articles.length} committee meetings identified! ===\n`);
 
   let createdCount = 0;
   let updatedCount = 0;
+  let pdfFoundCount = 0;
+  let pdfTextExtractedCount = 0;
 
   for (let i = 0; i < articles.length; i++) {
     const art = articles[i];
+    if (art.pdfFileUrl) pdfFoundCount++;
+
     const existing = await prisma.committee_meetings.findUnique({
       where: { seq: art.seq }
     });
@@ -264,6 +360,8 @@ async function main() {
       const detail = await fetchDetailForArticle(art, headers);
       const rawText = detail?.rawText || '';
       const meetingDate = detail?.meetingDate || art.postDate;
+      const pdfContent = detail?.pdfContent || null;
+      if (pdfContent) pdfTextExtractedCount++;
 
       const createdMeeting = await prisma.committee_meetings.create({
         data: {
@@ -277,6 +375,7 @@ async function main() {
           postDate: art.postDate,
           attendees: detail?.attendees || null,
           rawContent: rawText ? rawText.substring(0, 8000) : null,
+          pdfContent,
           sourceUrl: art.href,
           pdfFileName: detail?.pdfFileName || art.pdfFileName,
           pdfFileUrl: detail?.pdfFileUrl || art.pdfFileUrl,
@@ -300,9 +399,50 @@ async function main() {
         });
       }
       createdCount++;
-      console.log(`[${i + 1}/${articles.length}] Created: #${art.postNo || art.seq} ${art.title} (Agendas: ${agendas.length})`);
+      console.log(`[${i + 1}/${articles.length}] Created: #${art.postNo || art.seq} ${art.title} (PDF: ${createdMeeting.pdfFileUrl ? 'YES' : 'NO'}, pdfContent: ${pdfContent ? pdfContent.length + '자' : 'NO'})`);
     } else {
-      // 기존에 안건이 없는 경우 본문에서 안건 백필
+      // 기존 레코드의 첨부파일 및 pdfContent 백필/업데이트
+      const updateData = {};
+      let targetPdfUrl = existing.pdfFileUrl;
+
+      // PDF/HWP 링크 갱신
+      if (art.pdfFileUrl && existing.pdfFileUrl !== art.pdfFileUrl) {
+        updateData.pdfFileName = art.pdfFileName;
+        updateData.pdfFileUrl = art.pdfFileUrl;
+        targetPdfUrl = art.pdfFileUrl;
+      }
+      if (art.hwpFileUrl && existing.hwpFileUrl !== art.hwpFileUrl) {
+        updateData.hwpFileName = art.hwpFileName;
+        updateData.hwpFileUrl = art.hwpFileUrl;
+      }
+
+      // 상세 페이지에서 첨부파일 재확인이 필요한 경우
+      if (!targetPdfUrl || !existing.pdfContent) {
+        const detail = await fetchDetailForArticle(art, headers);
+        if (detail?.pdfFileUrl && (!existing.pdfFileUrl || existing.pdfFileUrl !== detail.pdfFileUrl)) {
+          updateData.pdfFileName = detail.pdfFileName;
+          updateData.pdfFileUrl = detail.pdfFileUrl;
+          targetPdfUrl = detail.pdfFileUrl;
+        }
+        if (detail?.hwpFileUrl && (!existing.hwpFileUrl || existing.hwpFileUrl !== detail.hwpFileUrl)) {
+          updateData.hwpFileName = detail.hwpFileName;
+          updateData.hwpFileUrl = detail.hwpFileUrl;
+        }
+        if (detail?.pdfContent && !existing.pdfContent) {
+          updateData.pdfContent = detail.pdfContent;
+          pdfTextExtractedCount++;
+        }
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await prisma.committee_meetings.update({
+          where: { id: existing.id },
+          data: updateData
+        });
+        console.log(`[${i + 1}/${articles.length}] Updated #${art.postNo || art.seq}: PDF=${updateData.pdfFileUrl || existing.pdfFileUrl ? 'YES' : 'NO'}, pdfContent=${updateData.pdfContent ? updateData.pdfContent.length + '자' : existing.pdfContent ? 'EXISTS' : 'NO'}`);
+      }
+
+      // 안건 백필
       const agendaCount = await prisma.committee_agendas.count({ where: { meetingId: existing.id } });
       if (agendaCount === 0 && existing.rawContent) {
         const agendas = parseAgendas(existing.rawContent, existing.title);
@@ -319,17 +459,21 @@ async function main() {
             }
           });
         }
-        if (agendas.length > 0) {
-          console.log(`[${i + 1}/${articles.length}] Backfilled ${agendas.length} agendas for: ${existing.title}`);
-        }
       }
       updatedCount++;
     }
   }
 
   const finalMeetings = await prisma.committee_meetings.count();
+  const finalPdfMeetings = await prisma.committee_meetings.count({ where: { pdfFileUrl: { not: null } } });
+  const finalPdfContentMeetings = await prisma.committee_meetings.count({ where: { pdfContent: { not: null } } });
   const finalAgendas = await prisma.committee_agendas.count();
-  console.log(`\n=== All Done! Total Meetings: ${finalMeetings}, Total Agendas: ${finalAgendas} ===`);
+
+  console.log(`\n=== All Done! ===`);
+  console.log(`- Total Meetings: ${finalMeetings}`);
+  console.log(`- Meetings with PDF URL: ${finalPdfMeetings}`);
+  console.log(`- Meetings with PDF Text Content: ${finalPdfContentMeetings}`);
+  console.log(`- Total Agendas: ${finalAgendas}`);
 }
 
 main()
