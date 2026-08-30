@@ -29,24 +29,27 @@ export async function GET(req) {
 
     let orderBy = [];
     if (sortBy === 'date') {
-      // meeting id: asc가 최신 2026년도 회의록
       orderBy = [
-        { meeting: { id: sortOrder === 'desc' ? 'asc' : 'desc' } },
+        { meeting: { postDate: sortOrder } },
+        { meeting: { id: sortOrder } },
         { orderIndex: 'asc' },
       ];
     } else if (sortBy === 'ingredient') {
       orderBy = [
         { ingredientName: sortOrder },
-        { meeting: { id: 'asc' } },
+        { meeting: { postDate: 'desc' } },
+        { meeting: { id: 'desc' } },
       ];
     } else if (sortBy === 'result') {
       orderBy = [
         { result: sortOrder },
-        { meeting: { id: 'asc' } },
+        { meeting: { postDate: 'desc' } },
+        { meeting: { id: 'desc' } },
       ];
     } else {
       orderBy = [
-        { meeting: { id: sortOrder === 'desc' ? 'asc' : 'desc' } },
+        { meeting: { postDate: sortOrder } },
+        { meeting: { id: sortOrder } },
         { orderIndex: 'asc' },
       ];
     }

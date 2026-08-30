@@ -117,7 +117,19 @@ async function resolveEmbeddings(chunks, reusable = new Map()) {
 }
 
 export async function GET() {
-  const [totalMeetings, chunkedMeetings, totalChunks, embeddedChunks, pendingChunks, failedChunks] = await Promise.all([
+  const [
+    totalMeetings,
+    chunkedMeetings,
+    totalChunks,
+    embeddedChunks,
+    pendingChunks,
+    failedChunks,
+    pdfChunks,
+    agendaChunks,
+    bodyChunks,
+    pdfMeetings,
+    pdfContentMeetings,
+  ] = await Promise.all([
     prisma.committee_meetings.count(),
     prisma.committee_meetings.count({ where: { chunks: { some: {} } } }),
     prisma.committee_chunks.count(),
@@ -128,6 +140,11 @@ export async function GET() {
     } }),
     prisma.committee_chunks.count({ where: { embeddingStatus: 'pending' } }),
     prisma.committee_chunks.count({ where: { embeddingStatus: 'failed' } }),
+    prisma.committee_chunks.count({ where: { chunkType: 'pdf' } }),
+    prisma.committee_chunks.count({ where: { chunkType: 'agenda' } }),
+    prisma.committee_chunks.count({ where: { chunkType: 'body' } }),
+    prisma.committee_meetings.count({ where: { pdfFileUrl: { not: null } } }),
+    prisma.committee_meetings.count({ where: { pdfContent: { not: null } } }),
   ]);
   return NextResponse.json({
     totalMeetings,
@@ -137,6 +154,11 @@ export async function GET() {
     embeddedChunks,
     pendingChunks,
     failedChunks,
+    pdfChunks,
+    agendaChunks,
+    bodyChunks,
+    pdfMeetings,
+    pdfContentMeetings,
     chunkVersion: CHUNK_VERSION,
     chunkTargetSize: CHUNK_TARGET_SIZE,
     overlap: CHUNK_OVERLAP,

@@ -403,14 +403,49 @@ export default function CommitteePage() {
   };
 
   const openSyncHistory = async () => {
+  };
+
+  const fetchSyncHistory = async (runId) => {
+    setSyncHistoryLoading(true);
+    try {
+      const url = runId ? `/api/committee/sync-history?runId=${runId}` : "/api/committee/sync-history?limit=20";
+      const res = await fetch(url);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "이력 조회 실패");
+      if (runId) {
+        setSelectedSyncRun(json.data);
+        setExpandedSyncChange(null);
+      } else {
+        setSyncRuns(json.data || []);
+        if (!selectedSyncRun && json.data?.[0]?.id) {
+          await fetchSyncHistory(json.data[0].id);
+        }
+      }
+    } catch (e) {
+      alert("동기화 이력 조회 오류: " + e.message);
+    } finally {
+      setSyncHistoryLoading(false);
+    }
+  };
+
+  const openSyncHistory = async () => {
     setSyncHistoryOpen(true);
     await fetchSyncHistory();
   };
 
-  // 챗봇 스크롤 자동 이동 (컨테이너 내부만 스크롤, 페이지 전체 스크롤 방지)
+  // 챗봇 스크롤 자동 이동 (흔들림 방지: requestAnimationFrame 동기화)
   useEffect(() => {
     if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      const container = chatContainerRef.current;
+      // 사용자가 위로 스크롤해서 이전 내용을 읽고 있는 중이 아니라면 아래로 자동 스크롤
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+      if (isNearBottom) {
+        requestAnimationFrame(() => {
+          if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+          }
+        });
+      }
     }
   }, [messages]);
 
@@ -427,7 +462,7 @@ export default function CommitteePage() {
     }, 1000);
   };
 
-  // 챗봇 질문 전송 (RAG 스트리밍)
+  // 챗봇 질문 전송 (RAG 스트리밍 - 렌더링 스로틀링으로 화면 떨림 방지)
   const handleSendChat = async (questionText) => {
     const q = questionText || chatInput;
     if (!q || !q.trim() || chatLoading || cooldown > 0) return;
@@ -474,6 +509,7 @@ export default function CommitteePage() {
       let feedbackId = null;
       let headerChecked = false;
       let headerBuffer = "";
+      let lastFlushTime = 0;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -506,17 +542,34 @@ export default function CommitteePage() {
           streamedText += chunk;
         }
 
-        setMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            content: streamedText,
-            references: refs,
-            feedbackId,
-          };
-          return updated;
-        });
+        // 화면 떨림 방지: 50ms 스로틀링 렌더링
+        const now = Date.now();
+        if (now - lastFlushTime > 50) {
+          lastFlushTime = now;
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              content: streamedText,
+              references: refs,
+              feedbackId,
+            };
+            return updated;
+          });
+        }
       }
+
+      // 최종 전체 텍스트 확정
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          content: streamedText,
+          references: refs,
+          feedbackId,
+        };
+        return updated;
+      });
       startCooldown();
     } catch (err) {
       setMessages(prev => {
@@ -787,8 +840,8 @@ export default function CommitteePage() {
               </div>
             </div>
 
-            {/* 챗봇 메시지 영역 */}
-            <div ref={chatContainerRef} style={{ flex: 1, padding: "18px 20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 14, background: "#f8fafc" }}>
+            {/* 챗봇 메시지 영역 (overflowAnchor none으로 스트리밍 도중 스크롤 덜컹거림 방지) */}
+            <div ref={chatContainerRef} style={{ flex: 1, padding: "18px 20px", overflowY: "auto", overflowAnchor: "none", display: "flex", flexDirection: "column", gap: 14, background: "#f8fafc" }}>
               {messages.map((msg, i) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
                   <div style={{

@@ -41,14 +41,20 @@ export async function GET(req) {
 
     let orderBy = [];
     if (sortBy === 'postNo' || sortBy === 'date') {
-      // id: asc는 최신 공시(postNo: 362, 2026년)부터 순서대로 정렬됨
-      orderBy = [{ id: sortOrder === 'desc' ? 'asc' : 'desc' }];
+      // 식약처 게시판과 동일하게 최신 공시일자(postDate) 및 최신 등록순 정렬
+      orderBy = [
+        { postDate: sortOrder },
+        { id: sortOrder },
+      ];
     } else if (sortBy === 'views') {
-      orderBy = [{ viewCount: sortOrder }, { id: 'asc' }];
+      orderBy = [{ viewCount: sortOrder }, { postDate: 'desc' }, { id: 'desc' }];
     } else if (sortBy === 'title') {
-      orderBy = [{ title: sortOrder }, { id: 'asc' }];
+      orderBy = [{ title: sortOrder }, { postDate: 'desc' }, { id: 'desc' }];
     } else {
-      orderBy = [{ id: sortOrder === 'desc' ? 'asc' : 'desc' }];
+      orderBy = [
+        { postDate: sortOrder },
+        { id: sortOrder },
+      ];
     }
 
     const [total, meetings, deptStats] = await Promise.all([

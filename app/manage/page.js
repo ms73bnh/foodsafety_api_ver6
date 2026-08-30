@@ -2090,7 +2090,18 @@ function ManagePageInner() {
             </h4>
             {chunkStatus && (
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                {[['전체 회의', chunkStatus.totalMeetings, '#0284c7'], ['청킹 완료', chunkStatus.chunkedMeetings, '#16a34a'], ['미처리', chunkStatus.pendingMeetings, '#f59e0b'], ['총 청크', chunkStatus.totalChunks, '#7c3aed'], ['임베딩 완료', chunkStatus.embeddedChunks, '#0891b2'], ['임베딩 실패', chunkStatus.failedChunks, '#dc2626']].map(([label, val, color]) => (
+                [
+                  ['전체 회의', chunkStatus.totalMeetings, '#0284c7'],
+                  ['청킹 완료', chunkStatus.chunkedMeetings, '#16a34a'],
+                  ['미처리', chunkStatus.pendingMeetings, '#f59e0b'],
+                  ['PDF 추출 회의', (chunkStatus.pdfContentMeetings ?? '-') + '/' + (chunkStatus.pdfMeetings ?? '-'), '#7c3aed'],
+                  ['총 청크', chunkStatus.totalChunks, '#0f172a'],
+                  ['PDF 청크', chunkStatus.pdfChunks ?? '-', '#7c3aed'],
+                  ['안건 청크', chunkStatus.agendaChunks ?? '-', '#0284c7'],
+                  ['본문 청크', chunkStatus.bodyChunks ?? '-', '#64748b'],
+                  ['임베딩 완료', chunkStatus.embeddedChunks, '#0891b2'],
+                  ['임베딩 실패', chunkStatus.failedChunks, '#dc2626'],
+                ].map(([label, val, color]) => (
                   <div key={label} style={{ background: '#fff', border: `1px solid ${color}22`, borderRadius: '8px', padding: '8px 14px', textAlign: 'center', minWidth: '80px' }}>
                     <div style={{ fontSize: '1.2rem', fontWeight: 800, color }}>{val ?? '-'}</div>
                     <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{label}</div>
