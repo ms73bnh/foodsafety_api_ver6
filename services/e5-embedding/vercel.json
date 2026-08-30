@@ -1,10 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "public",
   "functions": {
     "api/embed.js": {
-      "includeFiles": "models/**",
+      "includeFiles": "models/**/*",
       "maxDuration": 300,
       "memory": 2048
     }

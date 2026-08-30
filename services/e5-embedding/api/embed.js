@@ -3,6 +3,7 @@ import {
   MODEL_DIMENSIONS,
   MODEL_ID,
   embedTexts,
+  getModelFileStatus,
 } from '../lib/model.js';
 
 function isAuthorized(request) {
@@ -13,7 +14,15 @@ function isAuthorized(request) {
 
 export default async function handler(request, response) {
   if (request.method === 'GET') {
-    return response.status(200).json({ ok: true, model: MODEL_ID, dtype: 'int8', dimensions: MODEL_DIMENSIONS });
+    const fileStatus = await getModelFileStatus();
+    return response.status(fileStatus.ready ? 200 : 503).json({
+      ok: fileStatus.ready,
+      model: MODEL_ID,
+      dtype: 'int8',
+      dimensions: MODEL_DIMENSIONS,
+      filesReady: fileStatus.ready,
+      missingFiles: fileStatus.missingFiles,
+    });
   }
   if (request.method !== 'POST') return response.status(405).json({ error: 'Method not allowed' });
   if (!isAuthorized(request)) return response.status(401).json({ error: 'Unauthorized' });
