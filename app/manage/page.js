@@ -51,12 +51,11 @@ function ManagePageInner() {
   const [rawGeneralSearchQuery, setRawGeneralSearchQuery] = useState('');
   const [rawGeneralExportState, setRawGeneralExportState] = useState({ active: false, message: '' });
   const [rawGeneralExportResume, setRawGeneralExportResume] = useState({});
-
-  // ?�규 ?�태: ?�용삭제관�?  
+  // 사용자 관리 상태
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
 
-  // ?�용삭제?�정 모달 ?�태
+  // 사용자 편집 모달 상태
   const [editingUser, setEditingUser] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
@@ -66,15 +65,13 @@ function ManagePageInner() {
   const [menuConfig, setMenuConfig] = useState([]);
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuMsg, setMenuMsg] = useState({ text: '', error: false });
-  const [rebuildStatus, setRebuildStatus] = useState(null);
-  const [rebuilding, setRebuilding] = useState(false);
-  const [rebuildLog, setRebuildLog] = useState([]);
   const [chunkStatus, setChunkStatus] = useState(null);
   const [chunking, setChunking] = useState(false);
   const [chunkLog, setChunkLog] = useState([]);
 
   // 시스템 역할(권한) 관리 상태
   const [roles, setRoles] = useState(DEFAULT_ROLES);
+
   const [rolesLoading, setRolesLoading] = useState(false);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
@@ -384,7 +381,6 @@ function ManagePageInner() {
       fetchAuditLogs();
     } else if (activeTab === 'menu') {
       fetch('/api/menu-visibility').then(r => r.json()).then(d => setMenuConfig(d.config || [])).catch(() => {});
-      fetch('/api/committee/rebuild').then(r => r.json()).then(d => setRebuildStatus(d)).catch(() => {});
       fetch('/api/committee/chunks').then(r => r.json()).then(d => setChunkStatus(d)).catch(() => {});
     } else if (activeTab === 'notices') {
       fetchNotices();
@@ -2059,7 +2055,7 @@ function ManagePageInner() {
             </div>
 
             {menuMsg.text && (
-              <div style={{ marginTop: '14px', padding: '10px 14px', background: menuMsg.error ? '#fef2f2' : '#f0fdf4', border: `1px solid ${menuMsg.error ? '#fca5a5' : '#86efac'}`, borderRadius: '8px', fontSize: '0.82rem', color: menuMsg.error ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
+              <div style={{ marginTop: '14px', padding: '10px 14px', background: menuMsg.error ? '#fef2f2' : '#f0fdf4', border: 1px solid , borderRadius: '8px', fontSize: '0.82rem', color: menuMsg.error ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
                 {menuMsg.text}
               </div>
             )}
@@ -2084,58 +2080,6 @@ function ManagePageInner() {
                 {menuSaving ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>저장 중...</> : <><i className="fa-solid fa-floppy-disk" style={{ marginRight: '6px' }}></i>설정 저장</>}
               </button>
             </div>
-          </div>
-
-          {/* 데이터 재구축 */}
-          <div className="glass-panel">
-            <h3 style={{ color: 'var(--text-color)', margin: '0 0 6px' }}>
-              <i className="fa-solid fa-database" style={{ marginRight: '8px', color: '#7c3aed' }}></i>심의위원회 데이터 재구축
-            </h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '16px' }}>
-              게시물 본문 재수집과 PDF 텍스트 추출만 수행합니다. 임베딩은 아래 RAG 청킹에서 중복 없이 배치 처리합니다.
-            </p>
-            {rebuildStatus && (
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                {[['전체 회의', rebuildStatus.total, '#0284c7'], ['본문 있음', rebuildStatus.hasContent, '#16a34a'], ['PDF 있음', rebuildStatus.hasPdf, '#7c3aed'], ['수집 필요', rebuildStatus.pending, '#f59e0b']].map(([label, val, color]) => (
-                  <div key={label} style={{ flex: '1 1 100px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 700, color }}>{val ?? '-'}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>{label}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ padding: '12px 16px', background: '#fefce8', border: '1px solid #fef08a', borderRadius: '8px', fontSize: '0.8rem', color: '#713f12', marginBottom: '14px' }}>
-              HWP 파일은 바이너리 포맷으로 텍스트 추출 불가. PDF만 지원됩니다.
-            </div>
-            <button onClick={async () => {
-              if (!confirm('누락된 본문과 PDF 텍스트를 재구축합니다. 진행하시겠습니까?')) return;
-              setRebuilding(true); setRebuildLog([]);
-              let offset = 0, total = 0;
-              try {
-                while (true) {
-                  const res = await fetch('/api/committee/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 'missing' }) });
-                  const data = await res.json();
-                  if (data.error) { setRebuildLog(prev => [...prev, `오류: ${data.error}`]); break; }
-                  total += data.processed || 0;
-                  (data.results || []).forEach(r => setRebuildLog(prev => [...prev, `[${r.id}] ${r.title?.substring(0, 28)}... | 본문:${r.hasRaw ? '✓' : '✗'} PDF:${r.hasPdf ? '✓' : r.pdfError ? `✗(${r.pdfError})` : '✗'}`]));
-                  if (data.done || data.processed === 0) { setRebuildLog(prev => [...prev, `완료! 총 ${total}건 처리됨`]); break; }
-                  offset = data.nextOffset || (offset + 3);
-                  await new Promise(r => setTimeout(r, 1000));
-                }
-              } catch (e) { setRebuildLog(prev => [...prev, `오류: ${e.message}`]); }
-              const status = await fetch('/api/committee/rebuild').then(r => r.json()).catch(() => null);
-              if (status) setRebuildStatus(status);
-              setRebuilding(false);
-            }} disabled={rebuilding} style={{ padding: '10px 22px', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, #7c3aed, #0284c7)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: rebuilding ? 0.7 : 1 }}>
-              {rebuilding ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>재구축 진행 중...</> : <><i className="fa-solid fa-rotate" style={{ marginRight: '6px' }}></i>누락 데이터 재구축 시작</>}
-            </button>
-            {rebuildLog.length > 0 && (
-              <div style={{ marginTop: '14px', background: '#0f172a', borderRadius: '8px', padding: '14px', maxHeight: '200px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.73rem' }}>
-                {rebuildLog.map((line, i) => (
-                  <div key={i} style={{ marginBottom: '3px', color: line.startsWith('완료') ? '#86efac' : line.startsWith('오류') ? '#fca5a5' : '#94a3b8' }}>{line}</div>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* RAG 청킹 섹션 */}

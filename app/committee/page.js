@@ -141,15 +141,15 @@ function CenteredPagination({ current, totalPages, onChange }) {
 }
 
 export default function CommitteePage() {
-  // ?곷떒 ???곹깭: 'meetings' (?뚯쓽 寃뚯떆臾?酉? | 'agendas' (?ъ쓽 ?덇굔蹂?酉?
+  // 상단 탭 상태: 'meetings' (회의 게시물 뷰) | 'agendas' (심의 안건별 뷰)
   const [viewTab, setViewTab] = useState("meetings");
 
-  // ?덉씠?꾩썐 & ?뺣? ?곹깭
+  // 레이아웃 & 확대 상태
   const [isFullscreenAgenda, setIsFullscreenAgenda] = useState(false);
   const [isWideLayout, setIsWideLayout] = useState(false);
   const [mobileSection, setMobileSection] = useState("meetings"); // 'meetings' | 'agendas' | 'ai'
 
-  // 1. ?뚯쓽 寃뚯떆臾??곗씠???곹깭
+  // 1. 회의 게시물 데이터 상태
   const [meetings, setMeetings] = useState([]);
   const [meetingTotal, setMeetingTotal] = useState(0);
   const [meetingPage, setMeetingPage] = useState(1);
@@ -159,9 +159,9 @@ export default function CommitteePage() {
   const [departments, setDepartments] = useState([]);
   const [expandedMeetingId, setExpandedMeetingId] = useState(null);
   const [meetingSortBy, setMeetingSortBy] = useState("date"); // 'date' | 'postNo' | 'views' | 'title'
-  const [meetingSortOrder, setMeetingSortOrder] = useState("desc"); // 'desc' (理쒖떊?? | 'asc'
+  const [meetingSortOrder, setMeetingSortOrder] = useState("desc"); // 'desc' (최신순) | 'asc'
 
-  // 2. ?ъ쓽 ?덇굔 ?곗씠???곹깭
+  // 2. 심의 안건 데이터 상태
   const [agendas, setAgendas] = useState([]);
   const [agendaTotal, setAgendaTotal] = useState(0);
   const [agendaPage, setAgendaPage] = useState(1);
@@ -169,12 +169,12 @@ export default function CommitteePage() {
   const [agendaSearch, setAgendaSearch] = useState("");
   const [agendaResultFilter, setAgendaResultFilter] = useState("");
   const [agendaSortBy, setAgendaSortBy] = useState("date"); // 'date' | 'ingredient' | 'result'
-  const [agendaSortOrder, setAgendaSortOrder] = useState("desc"); // 'desc' (理쒖떊?? | 'asc'
+  const [agendaSortOrder, setAgendaSortOrder] = useState("desc"); // 'desc' (최신순) | 'asc'
   const [stats, setStats] = useState({ total: 0, approved: 0, supplement: 0, rejected: 0, other: 0 });
 
   const [loading, setLoading] = useState(false);
 
-  // 3. ?숆린???곹깭
+  // 3. 동기화 상태
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
   const [syncHistoryOpen, setSyncHistoryOpen] = useState(false);
@@ -183,15 +183,15 @@ export default function CommitteePage() {
   const [selectedSyncRun, setSelectedSyncRun] = useState(null);
   const [expandedSyncChange, setExpandedSyncChange] = useState(null);
 
-  // 4. PDF 誘몃━蹂닿린 紐⑤떖 ?곹깭
+  // 4. PDF 미리보기 모달 상태
   const [previewPdf, setPreviewPdf] = useState(null); // { id, title, fileName, fileUrl }
 
-  // 5. AI 梨쀫큸 ?곹깭 & 沅뚰븳
+  // 5. AI 챗봇 상태 & 권한
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: "?덈뀞?섏꽭?? ?앹빟泥?**嫄닿컯湲곕뒫?앺뭹?ъ쓽?꾩썝??AI ?꾩슦誘?*?낅땲??\n\n??? ?뚯쓽濡앹쓽 **?몄젙 / 蹂댁셿 / 遺덉씤???ъ쑀**, **湲곕뒫??異붽? ?댁뿭**, **?ъ궗 湲곗?** ?깆뿉 ???臾댁뾿?대뱺 吏덈Ц??二쇱꽭??",
+      content: "안녕하세요! 식약처 **건강기능식품심의위원회 AI 도우미**입니다.\n\n💡 심의록의 **인정 / 보완 / 불인정 사유**, **기능성 추가 내역**, **심사 기록** 등에 관한 무엇이든 질문해 주세요!",
       references: [],
     },
   ]);
@@ -215,7 +215,7 @@ export default function CommitteePage() {
     return () => window.removeEventListener("resize", updateViewport);
   }, []);
 
-  // ESC ?ㅻ줈 紐⑤떖 ?リ린
+  // ESC 키로 모달 닫기
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
@@ -227,7 +227,7 @@ export default function CommitteePage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [previewPdf, isFullscreenAgenda]);
 
-  // ?ъ슜??沅뚰븳 諛??붿뿬 吏덈Ц ??議고쉶
+  // 사용자 권한 및 남은 질문 수 조회
   useEffect(() => {
     fetch('/api/committee/chat')
       .then(res => res.json())
@@ -259,27 +259,27 @@ export default function CommitteePage() {
         body: JSON.stringify({ value: systemPrompt }),
       });
       const data = await res.json();
-      setPromptMsg(data.success ? "????λ릺?덉뒿?덈떎." : "??" + data.error);
+      setPromptMsg(data.success ? "✅ 저장되었습니다." : "❌ " + data.error);
     } catch (e) {
-      setPromptMsg("?????以??ㅻ쪟 諛쒖깮");
+      setPromptMsg("❌ 저장 중 오류 발생");
     } finally {
       setPromptSaving(false);
     }
   };
 
   const handleResetPrompt = async () => {
-    if (!confirm("湲곕낯 ?꾨＼?꾪듃濡?珥덇린?뷀븯?쒓쿋?듬땲源?")) return;
+    if (!confirm("기본 프롬프트로 초기화하겠습니까?")) return;
     const res = await fetch('/api/committee/settings', { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
       setSystemPrompt(data.value);
-      setPromptMsg("??湲곕낯 ?꾨＼?꾪듃濡?珥덇린?붾릺?덉뒿?덈떎.");
+      setPromptMsg("✅ 기본 프롬프트로 초기화되었습니다.");
     }
   };
 
-  // ?? ?곗씠??議고쉶 ??????????????????????????????????????????????????????????
+  // ── 데이터 조회 함수들 ────────────────────────────────────────────────────
   
-  // ?뚯쓽 寃뚯떆臾?紐⑸줉 議고쉶
+  // 심의 게시물 목록 조회
   const fetchMeetings = useCallback(async (p = 1, customSortBy, customSortOrder) => {
     setLoading(true);
     try {
@@ -309,7 +309,7 @@ export default function CommitteePage() {
     }
   }, [meetingSearch, meetingDeptFilter, meetingSortBy, meetingSortOrder]);
 
-  // ?덇굔蹂?紐⑸줉 議고쉶
+  // 안건 목록 조회
   const fetchAgendas = useCallback(async (p = 1, customSortBy, customSortOrder) => {
     setLoading(true);
     try {
@@ -347,17 +347,17 @@ export default function CommitteePage() {
     }
   }, [viewTab, fetchMeetings, fetchAgendas]);
 
-  // 理쒖큹 濡쒕뱶 ???묒そ ?듦퀎 濡쒕뱶
+  // 최초 로드 시 양쪽 데이터 로드
   useEffect(() => {
     fetchAgendas(1);
     fetchMeetings(1);
   }, []);
 
-  // ?숆린???ㅽ뻾 (?꾩껜 ?꾩닔 ?議?+ ?꾨씫 PDF/蹂몃Ц/?덇굔 ?먮룞 梨꾩슦湲?
+  // 동기화 실행 (전체 전수 스캔 + 누락 PDF/본문/안건 자동 채우기)
   const handleSync = async () => {
-    if (!confirm("?앹빟泥??ъ쓽?꾩썝??寃뚯떆???꾩껜(1~40?섏씠吏)瑜??꾩닔 鍮꾧탳?섍퀬, ?좉퇋 湲 異붽? 諛??꾨씫??PDF/蹂몃Ц/?덇굔 ?곗씠?곕? ?쇨큵 蹂닿컯?섏떆寃좎뒿?덇퉴?")) return;
+    if (!confirm("식약처 심의위원회 게시물 전체(1~45페이지)를 전수 비교하고, 신규 글 추가 및 누락된 PDF/본문/안건 데이터를 일괄 보강하시겠습니까?")) return;
     setSyncing(true);
-    setSyncMsg("?앹빟泥??꾩껜 ?섏씠吏 ?꾩닔 ?議?諛?PDF/?곗씠??蹂닿컯 以?..");
+    setSyncMsg("식약처 전체 페이지 전수 스캔 및 PDF/데이터 보강 중...");
     try {
       const res = await fetch("/api/committee/sync", {
         method: "POST",
@@ -370,10 +370,10 @@ export default function CommitteePage() {
         await Promise.all([fetchMeetings(1), fetchAgendas(1)]);
         if (syncHistoryOpen) await fetchSyncHistory();
       } else {
-        alert(json.error || "?숆린??以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.");
+        alert(json.error || "동기화 중 오류가 발생했습니다.");
       }
     } catch (e) {
-      alert("?숆린???ㅻ쪟: " + e.message);
+      alert("동기화 오류: " + e.message);
     } finally {
       setSyncing(false);
     }
