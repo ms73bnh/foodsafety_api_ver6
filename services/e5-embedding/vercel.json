@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
+  "installCommand": "ONNXRUNTIME_NODE_INSTALL_CUDA=skip pnpm install --frozen-lockfile",
   "functions": {
     "api/embed.js": {
       "maxDuration": 300
