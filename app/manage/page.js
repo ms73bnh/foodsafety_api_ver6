@@ -2055,7 +2055,7 @@ function ManagePageInner() {
             </div>
 
             {menuMsg.text && (
-              <div style={{ marginTop: '14px', padding: '10px 14px', background: menuMsg.error ? '#fef2f2' : '#f0fdf4', border: 1px solid , borderRadius: '8px', fontSize: '0.82rem', color: menuMsg.error ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
+              <div style={{ marginTop: '14px', padding: '10px 14px', background: menuMsg.error ? '#fef2f2' : '#f0fdf4', border: `1px solid ${menuMsg.error ? '#fca5a5' : '#86efac'}`, borderRadius: '8px', fontSize: '0.82rem', color: menuMsg.error ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
                 {menuMsg.text}
               </div>
             )}
