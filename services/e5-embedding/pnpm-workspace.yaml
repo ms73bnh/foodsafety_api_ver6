@@ -1,6 +1,6 @@
 onlyBuiltDependencies:
-  - onnxruntime-node
   - protobufjs
 
 ignoredBuiltDependencies:
+  - onnxruntime-node
   - sharp

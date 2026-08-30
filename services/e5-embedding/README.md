@@ -11,9 +11,9 @@
 4. Node.js 22.x와 Fluid Compute가 활성화되었는지 확인하고 배포합니다.
 5. 현재 웹 프로젝트에는 `E5_EMBEDDING_URL=https://<새 프로젝트>.vercel.app/api/embed`와 같은 `E5_API_KEY`를 등록합니다.
 
-`vercel.json`의 설치 명령은 `ONNXRUNTIME_NODE_INSTALL_CUDA=skip`을 지정해 CPU Vercel
+`pnpm-workspace.yaml`은 `onnxruntime-node`의 postinstall을 명시적으로 건너뛰어 CPU Vercel
 Function에 불필요한 CUDA·TensorRT 네이티브 라이브러리가 설치되는 것을
-막습니다. CPU ONNX Runtime은 계속 사용합니다.
+막습니다. CPU ONNX Runtime 바이너리는 npm 패키지에 기본 포함되어 계속 사용합니다.
 
 GitHub Desktop에서 이 폴더만 별도 저장소로 만들거나 내부에 `.git`을 추가하지 않습니다. 같은 저장소를 두 Vercel 프로젝트가 서로 다른 Root Directory로 배포합니다.
 
