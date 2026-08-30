@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "model:download": "node scripts/download-model.mjs",
-    "build": "npm run model:download"
+    "postinstall": "node scripts/download-model.mjs",
+    "build": "node scripts/download-model.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "3.8.1"

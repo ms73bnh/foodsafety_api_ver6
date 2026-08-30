@@ -12,22 +12,23 @@ env.localModelPath = path.join(process.cwd(), 'models');
 env.allowRemoteModels = false;
 env.useFSCache = false;
 
+// 각 경로를 정적 문자열로 유지해야 Vercel Node File Trace가 빌드 산출물을
+// Function 파일 의존성으로 인식하여 런타임 번들에 포함합니다.
 const REQUIRED_MODEL_FILES = [
-  'config.json',
-  'quant_config.json',
-  'sentencepiece.bpe.model',
-  'special_tokens_map.json',
-  'tokenizer.json',
-  'tokenizer_config.json',
-  'onnx/model_int8.onnx',
+  ['config.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/config.json')],
+  ['quant_config.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/quant_config.json')],
+  ['sentencepiece.bpe.model', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/sentencepiece.bpe.model')],
+  ['special_tokens_map.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/special_tokens_map.json')],
+  ['tokenizer.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/tokenizer.json')],
+  ['tokenizer_config.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/tokenizer_config.json')],
+  ['onnx/model_int8.onnx', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/onnx/model_int8.onnx')],
 ];
 
 export async function getModelFileStatus() {
-  const modelRoot = path.join(env.localModelPath, MODEL_ID);
   const missingFiles = [];
-  for (const relativePath of REQUIRED_MODEL_FILES) {
+  for (const [relativePath, absolutePath] of REQUIRED_MODEL_FILES) {
     try {
-      await access(path.join(modelRoot, ...relativePath.split('/')));
+      await access(absolutePath);
     } catch {
       missingFiles.push(relativePath);
     }
