@@ -203,5 +203,134 @@ export async function POST(req) {
 }
 
 export async function GET(req) {
-  return NextResponse.json({ message: "Use POST to trigger sync" });
+  try {
+    const { searchParams } = new URL(req.url);
+    const isCron = searchParams.get('cron') === 'true' || Boolean(req.headers.get('x-vercel-cron'));
+
+    // 크론 호출이거나 관리자 세션인 경우 자동 동기화 실행 허용
+    if (!isCron && !isAdmin(req)) {
+      return NextResponse.json(
+        { success: false, error: '권한이 없습니다. 관리자 또는 시스템 크론만 실행할 수 있습니다.' },
+        { status: 403 }
+      );
+    }
+
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '1000', 10), 100), 2000);
+    let currentIdx = Math.max(parseInt(searchParams.get('startIdx') || '1', 10), 1);
+    let totalAdded = 0;
+    let totalUpdated = 0;
+    let iterations = 0;
+    const maxIterations = 5; // Vercel 서버리스 런타임 타임아웃 방지 (배치당 최대 5,000건)
+
+    while (iterations < maxIterations) {
+      iterations++;
+      const endIdx = currentIdx + limit - 1;
+      const url = `http://openapi.foodsafetykorea.go.kr/api/${API_KEY}/${SERVICE_ID}/json/${currentIdx}/${endIdx}`;
+
+      let response;
+      try {
+        response = await axios.get(url, { timeout: 45000 });
+      } catch (err) {
+        console.warn(`[Cron Sync] fetch error at ${currentIdx}:`, err.message);
+        break;
+      }
+
+      const data = response?.data?.[SERVICE_ID];
+      const rows = data?.row;
+      if (!rows || rows.length === 0) break;
+
+      const reportNos = rows.map(item => item.PRDLST_REPORT_NO).filter(Boolean);
+      const existingRecords = await prisma.declarations.findMany({
+        where: { prdlstReportNo: { in: reportNos } },
+        select: { prdlstReportNo: true, prmsDt: true, primaryFnclty: true, prdlstNm: true, normalizedFunctionality: true }
+      });
+      const existingMap = new Map(existingRecords.map(r => [r.prdlstReportNo, r]));
+
+      const toCreate = [];
+      const toUpdate = [];
+      const newChangeLogs = [];
+
+      for (const item of rows) {
+        if (!item.PRDLST_REPORT_NO) continue;
+        const existing = existingMap.get(item.PRDLST_REPORT_NO);
+        const normalized = normalizeData(item);
+        const prepareData = {
+          bsshNm: item.BSSH_NM,
+          prdlstNm: item.PRDLST_NM,
+          dispos: item.DISPOS || item.PRDT_SHAP_CD_NM || null,
+          prmsDt: item.PRMS_DT,
+          primaryFnclty: item.PRIMARY_FNCLTY,
+          ntkMthd: item.NTK_MTHD,
+          iftknAtntMatrCn: item.IFTKN_ATNT_MATR_CN,
+          cstdyMthd: item.CSTDY_MTHD,
+          rawmtrlNm: item.RAWMTRL_NM,
+          lcnsNo: item.LCNS_NO || null,
+          pogDaycnt: item.POG_DAYCNT || null,
+          prdlstReportNo: item.PRDLST_REPORT_NO,
+          productionReportStatus: item.PRDCTN_REPORT_STATUS || null,
+          normalizedFunctionality: normalized.normalizedFunctionality,
+          declarationType: normalized.declarationType,
+          customCategories: normalized.customCategories,
+        };
+
+        if (!existing) {
+          toCreate.push(prepareData);
+          totalAdded++;
+        } else {
+          let hasChange = false;
+          const changes = {};
+          if (existing.primaryFnclty !== prepareData.primaryFnclty) {
+            hasChange = true;
+            changes.primaryFnclty = { before: existing.primaryFnclty, after: prepareData.primaryFnclty };
+          }
+          if (existing.prdlstNm !== prepareData.prdlstNm) {
+            hasChange = true;
+            changes.prdlstNm = { before: existing.prdlstNm, after: prepareData.prdlstNm };
+          }
+          if (hasChange) {
+            toUpdate.push({ where: { prdlstReportNo: item.PRDLST_REPORT_NO }, data: prepareData });
+            newChangeLogs.push({
+              prdlstReportNo: item.PRDLST_REPORT_NO,
+              prdlstNm: item.PRDLST_NM,
+              changeType: 'UPDATE',
+              diff: changes,
+            });
+            totalUpdated++;
+          }
+        }
+      }
+
+      if (toCreate.length > 0) {
+        await prisma.declarations.createMany({ data: toCreate, skipDuplicates: true });
+      }
+      for (const updateItem of toUpdate) {
+        await prisma.declarations.update(updateItem);
+      }
+      if (newChangeLogs.length > 0) {
+        await prisma.change_log.createMany({ data: newChangeLogs, skipDuplicates: false });
+      }
+
+      if (rows.length < limit) break;
+      currentIdx += rows.length;
+    }
+
+    await prisma.sync_history.create({
+      data: {
+        status: 'SUCCESS',
+        addedCount: totalAdded,
+        updatedCount: totalUpdated,
+      }
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `새벽 정기 자동 동기화 완료 (추가: ${totalAdded}건, 갱신: ${totalUpdated}건)`,
+      totalAdded,
+      totalUpdated,
+      processedBatches: iterations,
+    });
+  } catch (error) {
+    console.error('Cron Sync Error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
 }

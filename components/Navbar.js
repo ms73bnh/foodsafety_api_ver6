@@ -579,6 +579,7 @@ export default function Navbar() {
         .navbar-dropdown-container {
           position: relative;
           display: inline-block;
+          padding-bottom: 6px;
         }
         .navbar-dropdown-menu {
           display: none;
@@ -594,10 +595,25 @@ export default function Navbar() {
           border-radius: 10px;
           z-index: 1050;
           padding: 6px 0;
-          margin-top: 4px;
+          margin-top: 0px;
+        }
+        /* 보이지 않는 히트박스 브릿지: 마우스가 틈새를 지날 때 드롭다운이 닫히지 않도록 연결 */
+        .navbar-dropdown-menu::before {
+          content: '';
+          position: absolute;
+          top: -14px;
+          left: 0;
+          right: 0;
+          height: 14px;
+          background: transparent;
         }
         .navbar-dropdown-container:hover .navbar-dropdown-menu {
           display: block;
+          animation: dropdownFadeIn 0.15s ease-out;
+        }
+        @keyframes dropdownFadeIn {
+          from { opacity: 0; transform: translate(-50%, -4px); }
+          to   { opacity: 1; transform: translate(-50%, 0); }
         }
         .dropdown-link {
           display: flex;
