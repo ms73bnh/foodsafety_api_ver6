@@ -1,57 +1,77 @@
+import os from 'node:os';
 import path from 'node:path';
-import process from 'node:process';
-import { access } from 'node:fs/promises';
 import { env, pipeline } from '@huggingface/transformers';
 
 export const MODEL_ID = 'Xenova/multilingual-e5-small';
+export const MODEL_REVISION = '761b726dd34fb83930e26aab4e9ac3899aa1fa78';
 export const MODEL_DIMENSIONS = 384;
 export const MAX_BATCH_SIZE = 16;
 export const MAX_TEXT_LENGTH = 6000;
 
-env.localModelPath = path.join(process.cwd(), 'models');
-env.allowRemoteModels = false;
-env.useFSCache = false;
+const MODEL_CACHE_DIR = path.join(os.tmpdir(), 'e5-transformers-cache');
+const pipelineState = globalThis.__e5PipelineState || {
+  status: 'idle',
+  startedAt: null,
+  readyAt: null,
+};
+globalThis.__e5PipelineState = pipelineState;
 
-// 각 경로를 정적 문자열로 유지해야 Vercel Node File Trace가 빌드 산출물을
-// Function 파일 의존성으로 인식하여 런타임 번들에 포함합니다.
-const REQUIRED_MODEL_FILES = [
-  ['config.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/config.json')],
-  ['quant_config.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/quant_config.json')],
-  ['sentencepiece.bpe.model', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/sentencepiece.bpe.model')],
-  ['special_tokens_map.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/special_tokens_map.json')],
-  ['tokenizer.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/tokenizer.json')],
-  ['tokenizer_config.json', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/tokenizer_config.json')],
-  ['onnx/model_int8.onnx', path.join(process.cwd(), 'models/Xenova/multilingual-e5-small/onnx/model_int8.onnx')],
-];
+// Vercel Function의 번들에 대용량 모델을 포함하지 않고, 첫 추론 시 Hugging Face에서
+// 다운로드한 뒤 인스턴스의 쓰기 가능한 /tmp 공간에 캐시합니다.
+env.allowLocalModels = false;
+env.allowRemoteModels = true;
+env.useFSCache = true;
+env.cacheDir = MODEL_CACHE_DIR;
 
-export async function getModelFileStatus() {
-  const missingFiles = [];
-  for (const [relativePath, absolutePath] of REQUIRED_MODEL_FILES) {
-    try {
-      await access(absolutePath);
-    } catch {
-      missingFiles.push(relativePath);
-    }
-  }
-  return { ready: missingFiles.length === 0, missingFiles };
+export function getModelStatus() {
+  return {
+    mode: 'remote-cache',
+    status: pipelineState.status,
+    loaded: pipelineState.status === 'ready',
+    startedAt: pipelineState.startedAt,
+    readyAt: pipelineState.readyAt,
+  };
 }
 
 function getExtractor() {
   if (!globalThis.__e5PipelinePromise) {
+    pipelineState.status = 'loading';
+    pipelineState.startedAt = new Date().toISOString();
+    pipelineState.readyAt = null;
+    const startedAt = Date.now();
+    console.log('[e5] pipeline initialization started', {
+      model: MODEL_ID,
+      revision: MODEL_REVISION,
+      cacheMode: 'remote-tmp',
+    });
     globalThis.__e5PipelinePromise = pipeline(
       'feature-extraction',
       MODEL_ID,
-      { dtype: 'int8', local_files_only: true },
-    );
+      { dtype: 'int8', revision: MODEL_REVISION },
+    ).then(extractor => {
+      pipelineState.status = 'ready';
+      pipelineState.readyAt = new Date().toISOString();
+      console.log('[e5] pipeline initialization completed', {
+        model: MODEL_ID,
+        durationMs: Date.now() - startedAt,
+      });
+      return extractor;
+    }).catch(error => {
+      pipelineState.status = 'failed';
+      pipelineState.readyAt = null;
+      globalThis.__e5PipelinePromise = undefined;
+      console.error('[e5] pipeline initialization failed', {
+        model: MODEL_ID,
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    });
   }
   return globalThis.__e5PipelinePromise;
 }
 
 export async function embedTexts(texts, inputType) {
-  const fileStatus = await getModelFileStatus();
-  if (!fileStatus.ready) {
-    throw new Error(`E5 모델 파일 누락: ${fileStatus.missingFiles.join(', ')}`);
-  }
   const prefix = inputType === 'query' ? 'query: ' : 'passage: ';
   const prepared = texts.map(text => `${prefix}${String(text).trim().replace(/\s+/g, ' ').slice(0, MAX_TEXT_LENGTH)}`);
   const extractor = await getExtractor();

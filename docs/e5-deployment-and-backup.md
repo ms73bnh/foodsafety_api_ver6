@@ -23,6 +23,7 @@ E5 프로젝트:
 
 - `E5_EMBEDDING_URL`: `https://<E5 프로젝트>.vercel.app/api/embed`
 - `E5_API_KEY`: E5 프로젝트와 동일한 값
+- `E5_REQUEST_TIMEOUT_MS`(선택): 첫 모델 다운로드를 고려한 요청 제한 시간. 기본값 `280000`
 - `GEMINI_API_KEY`: 질문 분석·조건부 근거 검증·최종 답변용
 - `GEMINI_FAST_MODEL`(선택): 기본 `gemini-3.5-flash-lite`, 키워드·검증용
 - `GEMINI_ANSWER_MODEL`(선택): 기본 `gemini-3.6-flash`, 최종 답변용
@@ -38,7 +39,7 @@ E5 프로젝트:
 ## 전환 순서
 
 1. `scripts/backup-database.ps1`로 현재 Gemini 임베딩까지 전체 백업
-2. E5 Vercel 프로젝트 배포 및 인증된 `POST /api/embed`로 실제 384차원 응답 확인
+2. E5 Vercel 프로젝트 배포 및 인증된 `POST /api/embed`로 첫 런타임 모델 다운로드와 실제 384차원 응답 확인
 3. 두 Vercel 프로젝트에 환경변수 등록
 4. 기존 웹 배포
 5. `prisma/committee_rag_v2.sql`이 미적용 상태라면 먼저 실행하고, 이어서 `prisma/committee_rag_e5.sql`과 `prisma/committee_chat_feedback.sql` 실행

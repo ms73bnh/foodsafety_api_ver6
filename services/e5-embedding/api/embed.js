@@ -2,8 +2,9 @@ import {
   MAX_BATCH_SIZE,
   MODEL_DIMENSIONS,
   MODEL_ID,
+  MODEL_REVISION,
   embedTexts,
-  getModelFileStatus,
+  getModelStatus,
 } from '../lib/model.js';
 
 function isAuthorized(request) {
@@ -14,14 +15,14 @@ function isAuthorized(request) {
 
 export default async function handler(request, response) {
   if (request.method === 'GET') {
-    const fileStatus = await getModelFileStatus();
-    return response.status(fileStatus.ready ? 200 : 503).json({
-      ok: fileStatus.ready,
+    const modelStatus = getModelStatus();
+    return response.status(200).json({
+      ok: true,
       model: MODEL_ID,
+      revision: MODEL_REVISION,
       dtype: 'int8',
       dimensions: MODEL_DIMENSIONS,
-      filesReady: fileStatus.ready,
-      missingFiles: fileStatus.missingFiles,
+      ...modelStatus,
     });
   }
   if (request.method !== 'POST') return response.status(405).json({ error: 'Method not allowed' });

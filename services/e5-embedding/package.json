@@ -3,15 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.28.0",
   "scripts": {
-    "model:download": "node scripts/download-model.mjs",
-    "postinstall": "node scripts/download-model.mjs",
-    "build": "node scripts/download-model.mjs"
+    "model:download": "node scripts/download-model.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "3.8.1"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   }
 }
