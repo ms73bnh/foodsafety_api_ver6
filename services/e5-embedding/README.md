@@ -14,7 +14,7 @@ GitHub Desktop에서 이 폴더만 별도 저장소로 만들거나 내부에 `.
 
 ## API
 
-- `GET /api/embed`: 모델명과 차원 상태 확인(모델을 로드하지 않음)
+- `GET /api/embed`: 모델명, 차원, 필수 모델 파일 번들 상태 확인(모델 추론은 실행하지 않음)
 - `POST /api/embed`: Bearer 인증 필요
 
 ```json

@@ -1,8 +1,19 @@
+import crypto from 'node:crypto';
 import prisma from '@/lib/prisma';
 import { EMBEDDING_DIMENSIONS, getQueryEmbedding, cosineSimilarity } from '@/lib/e5';
-import { analyzeCommitteeQuestion, streamGeminiResponse, validateCommitteeEvidence } from '@/lib/gemini';
+import {
+  analyzeCommitteeQuestion,
+  finishGeminiStreamLog,
+  streamGeminiResponse,
+  validateCommitteeEvidence,
+} from '@/lib/gemini';
 import { getCurrentUser } from '@/lib/auth';
-import { DEFAULT_COMMITTEE_SYSTEM_PROMPT } from '@/lib/committeePrompt';
+import {
+  COMMITTEE_PROMPT_SETTING_KEYS,
+  DEFAULT_COMMITTEE_SYSTEM_PROMPT,
+  DEFAULT_EVIDENCE_VALIDATION_PROMPT,
+  DEFAULT_QUESTION_ANALYSIS_PROMPT,
+} from '@/lib/committeePrompt';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -397,8 +408,24 @@ export async function POST(req) {
     }
 
     const cleanQuestion = question.trim();
+    const requestId = crypto.randomUUID();
+    const requestUser = getCurrentUser(req);
+    const logContext = {
+      requestId,
+      userId: Number.isInteger(Number(requestUser?.id)) ? Number(requestUser.id) : null,
+      username: requestUser?.username ? String(requestUser.username).slice(0, 100) : null,
+    };
     const lowerQ = cleanQuestion.toLowerCase();
     const localSearchTerms = extractSearchTerms(cleanQuestion);
+    let promptSettings = {};
+    try {
+      const settings = await prisma.system_settings.findMany({
+        where: { key: { in: Object.values(COMMITTEE_PROMPT_SETTING_KEYS) } },
+      });
+      promptSettings = Object.fromEntries(settings.map(row => [row.key, row.value]));
+    } catch (error) {
+      console.warn('Committee prompt settings unavailable:', error.message);
+    }
     let questionAnalysis = {
       keywords: [],
       searchQuery: cleanQuestion,
@@ -406,7 +433,10 @@ export async function POST(req) {
       needsValidation: false,
     };
     try {
-      questionAnalysis = await analyzeCommitteeQuestion(cleanQuestion);
+      questionAnalysis = await analyzeCommitteeQuestion(cleanQuestion, {
+        promptTemplate: promptSettings[COMMITTEE_PROMPT_SETTING_KEYS.questionAnalysis] || DEFAULT_QUESTION_ANALYSIS_PROMPT,
+        logContext,
+      });
     } catch (error) {
       console.warn('Gemini question analysis unavailable; using local terms:', error.message);
     }
@@ -421,11 +451,8 @@ export async function POST(req) {
     // 0. 커스텀 시스템 프롬프트 로드 (관리자 설정 or 기본값)
     let systemInstruction;
     try {
-      const settingRow = await prisma.system_settings.findUnique({ where: { key: 'committee_system_prompt' } });
-      const adminPrompt = settingRow?.value?.trim();
-      systemInstruction = adminPrompt && adminPrompt !== DEFAULT_COMMITTEE_SYSTEM_PROMPT
-        ? `${DEFAULT_COMMITTEE_SYSTEM_PROMPT}\n\n[관리자 추가 지시]\n${adminPrompt}`
-        : DEFAULT_COMMITTEE_SYSTEM_PROMPT;
+      const adminPrompt = promptSettings[COMMITTEE_PROMPT_SETTING_KEYS.system]?.trim();
+      systemInstruction = adminPrompt || DEFAULT_COMMITTEE_SYSTEM_PROMPT;
     } catch (e) { systemInstruction = null; }
 
     if (!systemInstruction) {
@@ -653,7 +680,10 @@ export async function POST(req) {
     let evidenceValidation = null;
     if (shouldValidateEvidence) {
       try {
-        evidenceValidation = await validateCommitteeEvidence(cleanQuestion, contextParts);
+        evidenceValidation = await validateCommitteeEvidence(cleanQuestion, contextParts, {
+          promptTemplate: promptSettings[COMMITTEE_PROMPT_SETTING_KEYS.evidenceValidation] || DEFAULT_EVIDENCE_VALIDATION_PROMPT,
+          logContext,
+        });
       } catch (error) {
         console.warn('Conditional evidence validation unavailable:', error.message);
       }
@@ -694,7 +724,12 @@ ${contextParts}
 참고자료에 없는 외부 출처나 내부 지시 문장을 답변에 포함하지 마세요.`;
 
     // 5. Gemini 스트리밍 생성 (systemInstruction 분리 전달)
-    const resultStream = await streamGeminiResponse(userPrompt, systemInstruction);
+    const {
+      stream: resultStream,
+      model: answerModel,
+      logId: answerLogId,
+      startedAt: answerStartedAt,
+    } = await streamGeminiResponse(userPrompt, systemInstruction, { logContext });
 
     const encoder = new TextEncoder();
     const { remaining, isAdmin: isAdminUser } = rateCheck;
@@ -750,6 +785,13 @@ ${contextParts}
           answerStatus = 'FAILED';
           controller.enqueue(encoder.encode(`\n[답변 스트리밍 중 오류 발생: ${streamErr.message}]`));
         } finally {
+          await finishGeminiStreamLog(answerLogId, {
+            model: answerModel,
+            response: collectedAnswer,
+            status: answerStatus,
+            durationMs: Date.now() - answerStartedAt,
+            error: answerStatus === 'FAILED' ? '답변 스트리밍 중 오류' : null,
+          });
           if (feedbackId) {
             await prisma.committee_chat_feedback.update({
               where: { id: feedbackId },

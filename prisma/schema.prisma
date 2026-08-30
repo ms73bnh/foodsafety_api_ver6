@@ -467,3 +467,27 @@ model committee_chat_feedback {
   @@index([createdAt])
   @@index([userId])
 }
+
+// E5/Gemini 호출 진단 및 단계별 프롬프트/응답 기록
+model committee_ai_logs {
+  id          String    @id @db.Uuid
+  requestId   String    @db.Uuid
+  stage       String    @db.VarChar(40)
+  provider    String    @db.VarChar(30)
+  model       String?   @db.VarChar(100)
+  prompt      String?   @db.Text
+  response    String?   @db.Text
+  status      String    @default("PENDING") @db.VarChar(20)
+  durationMs  Int?
+  error       String?   @db.Text
+  metadata    Json?
+  userId      Int?
+  username    String?   @db.VarChar(100)
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([requestId])
+  @@index([stage])
+  @@index([status])
+  @@index([createdAt])
+}

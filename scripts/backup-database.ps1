@@ -53,6 +53,7 @@ $manifest = [ordered]@{
   includesEmbeddingJson = $true
   includesPgvector = $true
   includesCommitteeChatFeedback = $true
+  includesCommitteeAiLogs = $true
   note = "외부 Storage의 PDF 원본 파일은 이 DB 덤프에 포함되지 않습니다."
   files = $files
 }

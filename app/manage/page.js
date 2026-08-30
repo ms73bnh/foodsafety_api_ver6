@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import RichTextEditor from '@/components/RichTextEditor';
+import CommitteeAiAdminPanel from '@/components/CommitteeAiAdminPanel';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { downloadGeneralExport, getGeneralExportKey } from '@/lib/generalDownload';
 
@@ -766,6 +767,9 @@ function ManagePageInner() {
          </button>
          <button onClick={() => { setActiveTab('menu'); }} className={`btn ${activeTab === 'menu' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'menu' ? 'linear-gradient(135deg, #7c3aed, #0284c7)' : 'transparent', border: 'none', color: activeTab === 'menu' ? '#fff' : '#7c3aed', fontSize: '0.9rem', fontWeight: 600 }}>
             <i className="fa-solid fa-bars" style={{marginRight: '8px'}}></i> 메뉴 & 권한 관리
+         </button>
+         <button onClick={() => { setActiveTab('ai'); }} className={`btn ${activeTab === 'ai' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'ai' ? 'linear-gradient(135deg, #0891b2, #7c3aed)' : 'transparent', border: 'none', color: activeTab === 'ai' ? '#fff' : '#0891b2', fontSize: '0.9rem', fontWeight: 600 }}>
+            <i className="fa-solid fa-robot" style={{marginRight: '8px'}}></i> AI 진단·프롬프트
          </button>
       </div>
 
@@ -2173,7 +2177,7 @@ function ManagePageInner() {
                 {chunking ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>진행 중...</> : <><i className="fa-solid fa-layer-group" style={{ marginRight: '6px' }}></i>누락 청킹 시작</>}
               </button>
               <button onClick={async () => {
-                if (!confirm('기존 청크를 구조 기반 V2 청크로 다시 구성합니다. 동일 내용의 768차원 임베딩은 재사용됩니다. 진행하시겠습니까?')) return;
+                if (!confirm('기존 청크를 구조 기반 V2 청크로 다시 구성합니다. 동일 내용의 E5 384차원 임베딩은 재사용됩니다. 진행하시겠습니까?')) return;
                 setChunking(true);
                 setChunkLog(['RAG 청킹 V2 전체 재구축 시작...']);
                 let offset = 0;
@@ -2232,6 +2236,8 @@ function ManagePageInner() {
           </div>
         </div>
       )}
+
+      {activeTab === 'ai' && <CommitteeAiAdminPanel />}
 
       <style jsx>{`
         .btn-page {

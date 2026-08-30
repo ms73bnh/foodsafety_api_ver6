@@ -897,7 +897,7 @@ export default function CommitteePage() {
                 {showPromptEditor && (
                   <div style={{ padding: "0 14px 14px" }}>
                     <div style={{ fontSize: "0.74rem", color: "#64748b", lineHeight: 1.5, marginBottom: 8 }}>
-                      기본 시스템 프롬프트는 항상 먼저 적용되고, 여기에 저장한 내용은 관리자 추가 지시로 함께 적용됩니다. 기본값 초기화를 누르면 코드에 내장된 최신 기본 프롬프트와 다시 일치합니다.
+                      저장한 내용 전체가 최종 답변의 시스템 프롬프트로 적용됩니다. 기본값 초기화를 누르면 코드에 내장된 안전한 기본 프롬프트로 돌아갑니다.
                     </div>
                     <textarea
                       value={systemPrompt}

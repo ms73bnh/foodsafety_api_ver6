@@ -4,7 +4,11 @@ import { DEFAULT_COMMITTEE_SYSTEM_PROMPT } from '@/lib/committeePrompt';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req) {
+  const currentUser = getCurrentUser(req);
+  if (!currentUser || currentUser.role !== 'ADMIN') {
+    return Response.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
+  }
   try {
     const row = await prisma.system_settings.findUnique({ where: { key: 'committee_system_prompt' } });
     return Response.json({ value: row?.value || DEFAULT_COMMITTEE_SYSTEM_PROMPT, isDefault: !row });
