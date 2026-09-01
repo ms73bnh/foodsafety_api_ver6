@@ -1,0 +1,25 @@
+name: 건강기능식품 자동 동기화
+
+on:
+  schedule:
+    # 매일 KST 06:00 = UTC 21:00 (전날)
+    - cron: '0 21 * * *'
+  workflow_dispatch: # 수동 실행 버튼도 활성화
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: API 동기화 실행
+        run: |
+          echo "동기화 시작: $(date -u)"
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            "${{ secrets.VERCEL_APP_URL }}/api/sync?cron=true")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          echo "응답 코드: $HTTP_CODE"
+          echo "응답 내용: $BODY"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "동기화 실패! HTTP $HTTP_CODE"
+            exit 1
+          fi
