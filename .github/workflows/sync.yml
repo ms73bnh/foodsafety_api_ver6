@@ -13,7 +13,7 @@ jobs:
       - name: API 동기화 실행
         run: |
           echo "동기화 시작: $(date -u)"
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
+          RESPONSE=$(curl -s -L -w "\n%{http_code}" \
             "${{ secrets.VERCEL_APP_URL }}/api/sync?cron=true")
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n-1)
