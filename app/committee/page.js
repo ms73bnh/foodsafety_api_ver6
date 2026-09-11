@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import CommitteePdfPreview from '@/components/CommitteePdfPreview';
 
 const QUICK_QUESTIONS = [
   "제202차 건강기능식품심의위원회 회의 결과를 요약해줘",
@@ -2118,11 +2119,7 @@ export default function CommitteePage() {
               </div>
             </div>
             {/* iframe으로 PDF 렌더링 */}
-            <iframe
-              src={`/api/committee/pdf/${previewPdf.id}`}
-              style={{ flex: 1, border: "none", width: "100%" }}
-              title={previewPdf.title}
-            />
+            <CommitteePdfPreview id={previewPdf.id} title={previewPdf.title} />
           </div>
         </div>
       )}

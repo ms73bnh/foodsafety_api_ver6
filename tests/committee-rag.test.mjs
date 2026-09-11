@@ -9,6 +9,8 @@ import { validatePage, openPdf, extractPage } from '../lib/committeeRag/pdf.mjs'
 import { claimJob, activateDocument } from '../lib/committeeRag/pipeline.mjs';
 import { mergeRankings, searchChunks, evidenceReference } from '../lib/committeeRag/search.mjs';
 import { splitIntoSemanticChunks } from '../lib/committeeChunks.js';
+import { resolveMeetingPdf, cleanFileName } from '../lib/committeeRag/preview.mjs';
+import { auditCommittee } from '../lib/committeeRag/audit.mjs';
 
 const table = { kind: 'table', title: '검토 결과', text: '', headers: ['원료명', '결과', '비고'], rows: [['원료 A', '보완', '안전성 자료 제출'], ['원료 B', '불인정', '기준 미충족']] };
 const sourceUrl = 'https://www.mfds.go.kr/brd/m_532/view.do?seq=123';
@@ -151,7 +153,16 @@ test('additive migration, queue leasing, retry eligibility and active lexical se
       INSERT INTO committee_meetings(id,title) VALUES (1,'검증 회의');
       INSERT INTO committee_chunks("meetingId","chunkType",content) VALUES (1,'body','과거 검색 자료');`);
     const migration = await readFile(new URL('../prisma/committee_rag_v3.sql', import.meta.url), 'utf8');
+    const beforeAdapter = { $queryRawUnsafe: async (sql, ...args) => (await db.query(sql, args)).rows };
+    const legacyFound = await searchChunks(beforeAdapter, '검색', ['검색'], []);
+    assert.equal(legacyFound.length, 1);
+    assert.equal(legacyFound[0].documentId, null);
+    const beforeAudit = await auditCommittee(beforeAdapter);
+    assert.equal(beforeAudit.migrationRequired, true);
+    assert.equal(beforeAudit.chunks[0].storedVectors, 0);
+    assert.equal(beforeAudit.chunks[0].total, 1);
     await db.exec(migration); await db.exec(migration);
+    assert.equal((await auditCommittee(beforeAdapter)).migrationRequired, false);
     assert.equal((await db.query('SELECT active FROM committee_chunks')).rows[0].active, true);
     const id = '10000000-0000-4000-8000-000000000001';
     await db.query('INSERT INTO committee_ingestion_jobs(id,"jobKey","meetingId") VALUES ($1,$2,1)', [id, 'discover:1']);
@@ -166,4 +177,17 @@ test('additive migration, queue leasing, retry eligibility and active lexical se
     const found = await searchChunks(adapter, '검색', ['검색'], []);
     assert.equal(found.length, 1); assert.equal(found[0].content, '과거 검색 자료');
   } finally { await db.close(); }
+});
+
+test('preview recovers a stale HWP attachment URL and decodes filenames', async () => {
+  const meeting = { pdfFileUrl: sourceUrl + '&file_seq=1', sourceUrl, pdfFileName: 'old.pdf' };
+  const html = '<div class="view_cont">본문</div><li><strong>회의록.pdf</strong><a href="./down.do?seq=123&amp;file_seq=2">회의록.pdf</a></li>';
+  const result = await resolveMeetingPdf(meeting, async url => url === meeting.pdfFileUrl ? Buffer.from('PKhwp') : url === sourceUrl ? Buffer.from(html) : Buffer.from('%PDF-1.7 mock'));
+  assert.equal(result.bytes.subarray(0, 5).toString(), '%PDF-');
+  assert.equal(cleanFileName('제202차(&apos;26년).pdf'), "제202차('26년).pdf");
+});
+test('preview rejects DRM and HTML without producing a bin download', async () => {
+  for (const body of ['FASOO DRM', '<html>error</html>']) {
+    await assert.rejects(() => resolveMeetingPdf({ pdfFileUrl: sourceUrl }, async () => Buffer.from(body)), error => error.code === 'PDF_UNAVAILABLE');
+  }
 });
