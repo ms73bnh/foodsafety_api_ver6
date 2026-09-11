@@ -6,25 +6,32 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:committee": "node --test tests/committee-rag.test.mjs",
+    "committee:worker": "node scripts/committee-worker.mjs",
+    "committee:crawl": "node scripts/committee-crawl.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
     "@prisma/client": "^6.19.3",
     "axios": "^1.14.0",
     "chart.js": "^4.5.1",
+    "cheerio": "^1.2.0",
     "dayjs": "^1.11.20",
     "fast-xml-parser": "^5.9.3",
     "next": "16.2.2",
     "node-cron": "^4.2.1",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.4",
     "react": "19.2.4",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.2.4",
     "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "eslint": "^9",
     "eslint-config-next": "16.2.2",

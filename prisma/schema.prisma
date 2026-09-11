@@ -336,6 +336,8 @@ model committee_meetings {
 
   agendas      committee_agendas[]
   chunks       committee_chunks[]
+  documents    committee_documents[]
+  ingestionJobs committee_ingestion_jobs[]
   syncChanges  committee_sync_changes[]
 }
 
@@ -395,6 +397,17 @@ model committee_chunks {
   id                  Int                @id @default(autoincrement())
   meetingId           Int
   meeting             committee_meetings @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  documentId          String?            @db.Uuid
+  document            committee_documents? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  active              Boolean            @default(true)
+  category            String             @default("other")
+  categories          String[]           @default([])
+  pageStart           Int?
+  pageEnd             Int?
+  blockIndex          Int?
+  sourceStart         Int?
+  sourceEnd           Int?
+  tokenCount          Int?
 
   chunkType           String             // 'agenda' | 'pdf' | 'body'
   content             String             @db.Text  // 청크 텍스트 (검색 대상)
@@ -417,6 +430,75 @@ model committee_chunks {
   @@index([contentHash])
   @@index([embeddingStatus])
   @@index([chunkVersion])
+  @@index([documentId, orderIndex])
+  @@index([active, category])
+}
+
+// Immutable source revisions. Only verified revisions become active.
+model committee_documents {
+  id              String   @id @default(uuid()) @db.Uuid
+  meetingId       Int
+  meeting         committee_meetings @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  sourceKey       String
+  sourceType      String
+  fileType        String
+  category        String   @default("other")
+  fileName        String
+  sourceUrl       String
+  sourceHash      String
+  observedAt      DateTime @default(now()) @db.Timestamptz(3)
+  pipelineVersion Int      @default(3)
+  original        Bytes?
+  markdown        String?  @db.Text
+  pageCount       Int      @default(0)
+  status          String   @default("pending")
+  active          Boolean  @default(false)
+  error           String?  @db.Text
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  pages           committee_document_pages[]
+  chunks          committee_chunks[]
+  jobs            committee_ingestion_jobs[]
+  @@unique([meetingId, sourceKey, sourceHash, pipelineVersion])
+  @@index([meetingId, active])
+  @@index([status])
+}
+
+model committee_document_pages {
+  id               Int @id @default(autoincrement())
+  documentId       String @db.Uuid
+  document         committee_documents @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  pageNumber       Int
+  markdown         String @db.Text
+  nativeText       String @db.Text
+  blocks           Json
+  extractionMethod String
+  status           String @default("completed")
+  warnings         Json
+  reviewedAt       DateTime? @db.Timestamptz(3)
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([documentId, pageNumber])
+}
+
+model committee_ingestion_jobs {
+  id           String @id @default(uuid()) @db.Uuid
+  jobKey       String @unique
+  meetingId    Int?
+  meeting      committee_meetings? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  documentId   String? @db.Uuid
+  document     committee_documents? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  stage        String @default("discover")
+  status       String @default("pending")
+  cursor       Int @default(0)
+  attempts     Int @default(0)
+  leaseToken   String? @db.Uuid
+  leaseUntil   DateTime? @db.Timestamptz(3)
+  nextRetryAt  DateTime @default(now()) @db.Timestamptz(3)
+  error        String? @db.Text
+  payload      Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  @@index([status, nextRetryAt])
 }
 
 model committee_agendas {

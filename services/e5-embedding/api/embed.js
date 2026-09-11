@@ -5,6 +5,7 @@ import {
   MODEL_REVISION,
   embedTexts,
   getModelStatus,
+  tokenCounts,
 } from '../lib/model.js';
 
 function isAuthorized(request) {
@@ -36,7 +37,10 @@ export default async function handler(request, response) {
 
   try {
     const startedAt = Date.now();
-    const embeddings = await embedTexts(texts, inputType);
+    const strictTokens = request.body?.strictTokens === true;
+    const counts = strictTokens ? await tokenCounts(texts, inputType) : null;
+    if (counts?.some(count => count > 512)) return response.status(422).json({ error: 'E5_TOKEN_LIMIT: 512토큰 초과 입력을 분할하세요.', tokenCounts: counts });
+    const embeddings = await embedTexts(texts, inputType, { strictTokens });
     return response.status(200).json({
       model: MODEL_ID,
       dtype: 'int8',
@@ -44,6 +48,7 @@ export default async function handler(request, response) {
       count: embeddings.length,
       elapsedMs: Date.now() - startedAt,
       embeddings,
+      ...(counts ? { tokenCounts: counts } : {}),
     });
   } catch (error) {
     console.error('E5 embedding failed:', error);

@@ -1,3 +1,5 @@
+import { enqueueMeeting } from '@/lib/committeeRag/pipeline.mjs';
+import { getCurrentUser } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ensureCommitteeSyncHistoryTables } from '@/lib/committeeSyncHistory';
@@ -218,7 +220,7 @@ async function createMeetingWithAgendas(art, detail) {
       viewCount: art.viewCount,
       postDate: art.postDate,
       attendees: detail?.attendees || null,
-      rawContent: rawText ? rawText.substring(0, 8000) : null,
+      rawContent: rawText ? rawText : null,
       pdfContent: detail?.pdfContent || null,
       sourceUrl: art.href,
       pdfFileName: detail?.pdfFileName || art.pdfFileName,
@@ -250,6 +252,7 @@ async function createMeetingWithAgendas(art, detail) {
 }
 
 export async function POST(req) {
+  if (getCurrentUser(req)?.role !== 'ADMIN') return NextResponse.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
   try {
     const body = await req.json().catch(() => ({}));
     await ensureCommitteeSyncHistoryTables(prisma);
@@ -296,6 +299,7 @@ export async function POST(req) {
             try {
               const detail = await fetchDetailForArticle(art, headers);
               const { meeting, addedAgendas: agendaCount } = await createMeetingWithAgendas(art, detail);
+              await enqueueMeeting(prisma, meeting.id);
               addedMeetings++;
               addedAgendas += agendaCount;
               if (detail?.pdfContent) pdfExtractedCount++;
@@ -360,6 +364,7 @@ export async function POST(req) {
           const needsRawContentBackfill = !existing.rawContent && detail?.rawText;
 
           if (changedFields.length === 0 && !needsAgendaBackfill && !needsPdfContentBackfill && !needsRawContentBackfill) {
+            await enqueueMeeting(prisma, existing.id);
             unchangedMeetings++;
             continue;
           }
@@ -371,7 +376,7 @@ export async function POST(req) {
             else updateData[field] = afterCandidate[field];
           }
           if (!existing.meetingNo && afterCandidate.meetingNo) updateData.meetingNo = afterCandidate.meetingNo;
-          if (needsRawContentBackfill && detail?.rawText) updateData.rawContent = detail.rawText.substring(0, 8000);
+          if (needsRawContentBackfill && detail?.rawText) updateData.rawContent = detail.rawText;
 
           // PDF 본문 텍스트 백필
           if (needsPdfContentBackfill) {
@@ -411,6 +416,7 @@ export async function POST(req) {
             }
           }
           addedAgendas += backfilledAgendas;
+          await enqueueMeeting(prisma, existing.id);
           updatedMeetings++;
 
           await prisma.committee_sync_changes.create({

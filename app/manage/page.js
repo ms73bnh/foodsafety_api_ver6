@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import RichTextEditor from '@/components/RichTextEditor';
 import CommitteeAiAdminPanel from '@/components/CommitteeAiAdminPanel';
+import CommitteeDocumentsPanel from '@/components/CommitteeDocumentsPanel';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { downloadGeneralExport, getGeneralExportKey } from '@/lib/generalDownload';
 
@@ -2082,117 +2083,11 @@ function ManagePageInner() {
             </div>
           </div>
 
-          {/* RAG 청킹 섹션 */}
-          <div style={{ marginTop: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h4 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
-              <i className="fa-solid fa-layer-group" style={{ marginRight: '8px', color: '#7c3aed' }}></i>
-              RAG 청킹 (AI 검색 최적화)
-            </h4>
-            {chunkStatus && (
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                {[
-                  ['전체 회의', chunkStatus.totalMeetings, '#0284c7'],
-                  ['청킹 완료', chunkStatus.chunkedMeetings, '#16a34a'],
-                  ['미처리', chunkStatus.pendingMeetings, '#f59e0b'],
-                  ['PDF 추출 회의', (chunkStatus.pdfContentMeetings ?? '-') + '/' + (chunkStatus.pdfMeetings ?? '-'), '#7c3aed'],
-                  ['총 청크', chunkStatus.totalChunks, '#0f172a'],
-                  ['PDF 청크', chunkStatus.pdfChunks ?? '-', '#7c3aed'],
-                  ['안건 청크', chunkStatus.agendaChunks ?? '-', '#0284c7'],
-                  ['본문 청크', chunkStatus.bodyChunks ?? '-', '#64748b'],
-                  ['임베딩 완료', chunkStatus.embeddedChunks, '#0891b2'],
-                  ['임베딩 실패', chunkStatus.failedChunks, '#dc2626'],
-                ].map(([label, val, color]) => (
-                  <div key={label} style={{ background: '#fff', border: `1px solid ${color}22`, borderRadius: '8px', padding: '8px 14px', textAlign: 'center', minWidth: '80px' }}>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color }}>{val ?? '-'}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{label}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button onClick={async () => {
-                setChunking(true);
-                setChunkLog([]);
-                let offset = 0;
-                let done = false;
-                while (!done) {
-                  try {
-                    const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 'missing' }) });
-                    const data = await res.json();
-                    if (data.results) data.results.forEach(r => setChunkLog(prev => [...prev, `[${r.id}] ${r.title} → 청크:${r.chunks} 임베딩:${r.embedded} 재사용:${r.reused || 0} API:${r.apiCalls || 0}회${r.errors?.[0] ? ` ⚠️ ${r.errors[0]}` : ''}`]));
-                    done = data.done || data.processed === 0;
-                    offset = data.nextOffset || offset + 3;
-                  } catch (e) { setChunkLog(prev => [...prev, `오류: ${e.message}`]); done = true; }
-                }
-                const status = await fetch('/api/committee/chunks').then(r => r.json()).catch(() => null);
-                if (status) setChunkStatus(status);
-                setChunkLog(prev => [...prev, `완료: 총 ${status?.totalChunks || '-'}개 청크`]);
-                setChunking(false);
-              }} disabled={chunking} style={{ padding: '10px 22px', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, #7c3aed, #0891b2)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: chunking ? 0.7 : 1 }}>
-                {chunking ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>진행 중...</> : <><i className="fa-solid fa-layer-group" style={{ marginRight: '6px' }}></i>누락 청킹 시작</>}
-              </button>
-              <button onClick={async () => {
-                if (!confirm('기존 청크를 구조 기반 V2 청크로 다시 구성합니다. 동일 내용의 E5 384차원 임베딩은 재사용됩니다. 진행하시겠습니까?')) return;
-                setChunking(true);
-                setChunkLog(['RAG 청킹 V2 전체 재구축 시작...']);
-                let offset = 0;
-                let done = false;
-                while (!done) {
-                  try {
-                    const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 'all' }) });
-                    const data = await res.json();
-                    if (!res.ok || data.error) throw new Error(data.error || `서버 오류 (${res.status})`);
-                    (data.results || []).forEach(r => setChunkLog(prev => [...prev, `[${r.id}] ${r.title} → 청크:${r.chunks} 임베딩:${r.embedded} 재사용:${r.reused || 0} API:${r.apiCalls || 0}회${r.errors?.[0] ? ` ⚠️ ${r.errors[0]}` : ''}`]));
-                    done = data.done || data.processed === 0;
-                    offset = data.nextOffset ?? (offset + 3);
-                  } catch (e) { setChunkLog(prev => [...prev, `오류: ${e.message}`]); done = true; }
-                }
-                const status = await fetch('/api/committee/chunks').then(r => r.json()).catch(() => null);
-                if (status) setChunkStatus(status);
-                setChunkLog(prev => [...prev, `완료: RAG V${status?.chunkVersion || 2}, 목표 ${status?.chunkTargetSize || 450}자 / 중첩 ${status?.overlap || 75}자`]);
-                setChunking(false);
-              }} disabled={chunking} style={{ padding: '10px 22px', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, #f59e0b, #ea580c)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: chunking ? 0.7 : 1 }}>
-                {chunking ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>진행 중...</> : <><i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '6px' }}></i>V2 전체 재구축</>}
-              </button>
-              <button onClick={async () => {
-                setChunking(true);
-                setChunkLog(['임베딩 누락 청크 재처리 시작...']);
-                let offset = 0;
-                let done = false;
-                let totalEmbedded = 0;
-                let firstRequest = true;
-                while (!done) {
-                  try {
-                    const res = await fetch('/api/committee/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch: 3, offset, mode: 're-embed', retryFailed: firstRequest }) });
-                    firstRequest = false;
-                    const data = await res.json();
-                    totalEmbedded += data.embedded || 0;
-                    const errInfo = data.errors?.length ? ` ⚠️ ${data.errors[0]}` : '';
-                    setChunkLog(prev => [...prev, `임베딩 완료 +${data.embedded || 0}개 / API ${data.apiCalls || 0}회 / 재사용 ${data.reused || 0}개 (대기:${data.remaining ?? '-'}, 실패:${data.failed ?? '-'})${errInfo}`]);
-                    done = data.done || data.processed === 0;
-                    offset = data.nextOffset || offset + 15;
-                  } catch (e) { setChunkLog(prev => [...prev, `오류: ${e.message}`]); done = true; }
-                }
-                const status = await fetch('/api/committee/chunks').then(r => r.json()).catch(() => null);
-                if (status) setChunkStatus(status);
-                setChunkLog(prev => [...prev, `완료: 총 ${totalEmbedded}개 임베딩 생성`]);
-                setChunking(false);
-              }} disabled={chunking} style={{ padding: '10px 22px', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, #16a34a, #0891b2)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: chunking ? 0.7 : 1 }}>
-                {chunking ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>진행 중...</> : <><i className="fa-solid fa-microchip" style={{ marginRight: '6px' }}></i>임베딩 누락 재처리</>}
-              </button>
-            </div>
-            {chunkLog.length > 0 && (
-              <div style={{ marginTop: '14px', background: '#0f172a', borderRadius: '8px', padding: '14px', maxHeight: '200px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.73rem' }}>
-                {chunkLog.map((line, i) => (
-                  <div key={i} style={{ marginBottom: '3px', color: line.startsWith('완료') ? '#86efac' : line.startsWith('오류') ? '#fca5a5' : '#94a3b8' }}>{line}</div>
-                ))}
-              </div>
-            )}
-          </div>
+          <CommitteeDocumentsPanel admin />
         </div>
       )}
 
-      {activeTab === 'ai' && <CommitteeAiAdminPanel />}
+      {activeTab === 'ai' && <><CommitteeAiAdminPanel /><div style={{ marginTop: 28 }}><CommitteeDocumentsPanel admin /></div></>}
 
       <style jsx>{`
         .btn-page {

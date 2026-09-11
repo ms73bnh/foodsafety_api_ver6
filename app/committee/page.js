@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const QUICK_QUESTIONS = [
   "제202차 건강기능식품심의위원회 회의 결과를 요약해줘",
@@ -88,7 +89,7 @@ function MarkdownMessageView({ content }) {
     <div className="md-body" style={{ lineHeight: 1.65 }}>
       {blocks.map((block, bIdx) => {
         if (block.type === "text") {
-          return <ReactMarkdown key={bIdx}>{block.content}</ReactMarkdown>;
+          return <ReactMarkdown remarkPlugins={[remarkGfm]} key={bIdx}>{block.content}</ReactMarkdown>;
         }
 
         const isSeparator = (r) => /^\|[\s\-:|]+\|$/.test(r);
@@ -758,6 +759,7 @@ export default function CommitteePage() {
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <Link href="/committee/documents" style={{ color: "#087f73", fontWeight: 700, padding: "10px 14px" }}>원문·표·마크다운 자료실 →</Link>
           {syncMsg && (
             <span style={{ fontSize: "0.82rem", color: "#0d9488", fontWeight: 600 }}>{syncMsg}</span>
           )}
@@ -937,7 +939,10 @@ export default function CommitteePage() {
                               <span style={{ marginLeft: 6, color: "#64748b" }}>({ref.meetingNo || ref.meetingDate})</span>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              {getResultBadge(ref.result)}
+                              {ref.result && getResultBadge(ref.result)}
+                              {ref.pageStart && <span>{ref.pageStart}쪽</span>}
+                              {ref.evidenceId && <span>[{ref.evidenceId}]</span>}
+                              {ref.pdfFileUrl && <a href={ref.pdfFileUrl} target="_blank" rel="noreferrer" style={{ color: "#087f73" }}>근거 원문 ↗</a>}
                             </div>
                           </div>
                         ))}

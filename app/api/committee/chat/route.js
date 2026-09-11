@@ -1,3 +1,4 @@
+import { searchChunks, evidenceReference } from '@/lib/committeeRag/search.mjs';
 import crypto from 'node:crypto';
 import prisma from '@/lib/prisma';
 import { EMBEDDING_DIMENSIONS, getQueryEmbedding, cosineSimilarity } from '@/lib/e5';
@@ -151,115 +152,8 @@ async function findDirectAgendaMatches(question, terms, queryVector, junkKeyword
     .slice(0, 12);
 }
 
-async function findChunkMatches(question, terms, queryVector) {
-  const matches = [];
-
-  if (queryVector.length === EMBEDDING_DIMENSIONS) {
-    let usedPgvector = false;
-    try {
-      const vectorLiteral = `[${queryVector.join(',')}]`;
-      const chunks = await prisma.$queryRawUnsafe(`
-        SELECT
-          c."id", c."meetingId", c."chunkType", c."content",
-          (1 - (c."embeddingVector" <=> $1::extensions.vector(384)))::float8 AS "vectorScore",
-          m."id" AS "mId", m."title" AS "mTitle", m."meetingNo" AS "mMeetingNo",
-          m."meetingDate" AS "mMeetingDate", m."postDate" AS "mPostDate",
-          m."pdfFileName" AS "mPdfFileName", m."pdfFileUrl" AS "mPdfFileUrl",
-          m."sourceUrl" AS "mSourceUrl"
-        FROM "committee_chunks" c
-        JOIN "committee_meetings" m ON m."id" = c."meetingId"
-        WHERE c."embeddingVector" IS NOT NULL
-        ORDER BY c."embeddingVector" <=> $1::extensions.vector(384)
-        LIMIT 40
-      `, vectorLiteral);
-
-      chunks.forEach(chunk => {
-        const meeting = {
-          id: chunk.mId,
-          title: chunk.mTitle,
-          meetingNo: chunk.mMeetingNo,
-          meetingDate: chunk.mMeetingDate,
-          postDate: chunk.mPostDate,
-          pdfFileName: chunk.mPdfFileName,
-          pdfFileUrl: chunk.mPdfFileUrl,
-          sourceUrl: chunk.mSourceUrl,
-        };
-        let score = Number(chunk.vectorScore || 0) + lexicalScore(chunk.content, terms, question);
-        if (meeting.meetingNo && normalizeForSearch(question).includes(normalizeForSearch(meeting.meetingNo))) score += 0.3;
-        if (score > 0.3) matches.push({
-          id: chunk.id,
-          meetingId: chunk.meetingId,
-          chunkType: chunk.chunkType,
-          content: chunk.content,
-          meeting,
-          score,
-        });
-      });
-      usedPgvector = true;
-    } catch (error) {
-      // RAG V2 SQL 적용 전에는 JSON 벡터 폴백을 사용합니다.
-      console.warn('pgvector chunk search unavailable; using JSON fallback:', error.message);
-    }
-
-    if (!usedPgvector) {
-      const batchSize = 300;
-      let cursor = 0;
-      while (true) {
-        const chunks = await prisma.committee_chunks.findMany({
-          where: { NOT: { embedding: null } },
-          orderBy: { id: 'desc' },
-          skip: cursor,
-          take: batchSize,
-          select: {
-            id: true, meetingId: true, chunkType: true, content: true, embedding: true, embeddingDimensions: true,
-            meeting: {
-              select: {
-                id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
-                pdfFileName: true, pdfFileUrl: true, sourceUrl: true,
-              },
-            },
-          },
-        });
-        if (chunks.length === 0) break;
-        for (const chunk of chunks) {
-          if (chunk.embeddingDimensions && chunk.embeddingDimensions !== EMBEDDING_DIMENSIONS) continue;
-          let vector = [];
-          try { vector = JSON.parse(chunk.embedding); } catch (e) {}
-          if (vector.length !== EMBEDDING_DIMENSIONS) continue;
-          let score = lexicalScore(chunk.content, terms, question) + cosineSimilarity(queryVector, vector);
-          if (chunk.meeting?.meetingNo && normalizeForSearch(question).includes(normalizeForSearch(chunk.meeting.meetingNo))) score += 0.3;
-          if (score > 0.3) matches.push({ ...chunk, score });
-        }
-        if (chunks.length < batchSize) break;
-        cursor += chunks.length;
-      }
-    }
-  }
-
-  if (terms.length > 0) {
-    const lexicalChunks = await prisma.committee_chunks.findMany({
-      where: { OR: terms.map(term => ({ content: { contains: term, mode: 'insensitive' } })) },
-      orderBy: { id: 'desc' },
-      take: 100,
-      select: {
-        id: true, meetingId: true, chunkType: true, content: true, embedding: true,
-        meeting: {
-          select: {
-            id: true, title: true, meetingNo: true, meetingDate: true, postDate: true,
-            pdfFileName: true, pdfFileUrl: true, sourceUrl: true,
-          },
-        },
-      },
-    }).catch(() => []);
-
-    lexicalChunks.forEach(chunk => {
-      matches.push({ ...chunk, score: lexicalScore(chunk.content, terms, question) + 1 });
-    });
-  }
-
-  return uniqueBy(matches, c => c.id)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8);
+async function findChunkMatches(question, terms, queryVector, options) {
+  return searchChunks(prisma, question, terms, queryVector, options);
 }
 
 // 비로그인 IP용 인메모리 백업 Map
@@ -580,15 +474,17 @@ export async function POST(req) {
     let chunkContext = '';
     let retrievalScore = 0;
     let matchedChunkIds = [];
+    let retrievedEvidence = [];
 
     const chunkCount = await prisma.committee_chunks.count();
 
     if (chunkCount > 0 && (queryVector.length > 0 || searchTerms.length > 0)) {
       // 전체 청크 DB에서 임베딩 점수와 키워드 점수를 함께 계산
-      const topChunks = await findChunkMatches(cleanQuestion, searchTerms, queryVector);
+      const topChunks = await findChunkMatches(cleanQuestion, searchTerms, queryVector, { meetingId: specificMeeting?.id });
+      retrievedEvidence = topChunks.map(evidenceReference);
       retrievalScore = Number(topChunks[0]?.score || 0);
       matchedChunkIds = topChunks.map(chunk => chunk.id).filter(Number.isInteger);
-      chunkContext = topChunks.map((c, i) => `[검색결과 ${i + 1}] (${c.chunkType})\n${c.content}`).join('\n\n');
+      chunkContext = topChunks.map((c, i) => `[근거 C${c.id}] (${c.chunkType}, ${c.documentName || c.meeting?.title}, ${c.pageStart || "페이지 미확인"}쪽)\n${c.content}`).join('\n\n');
 
       // ref 데이터용: 안건 청크에서 원료명/결과 추출
       if (!directAgendaContext && directIngredientMatches.length === 0) topMatches = topChunks
@@ -769,7 +665,7 @@ ${contextParts}
       searchQuery: questionAnalysis.searchQuery,
       keywords: searchTerms,
       matchedChunkIds,
-      references: refData,
+      references: [...retrievedEvidence, ...refData],
       retrievalScore,
       validationUsed: shouldValidateEvidence,
       validationSupported: evidenceValidation ? Boolean(evidenceValidation.supported) : null,
@@ -778,7 +674,7 @@ ${contextParts}
 
     const customReadable = new ReadableStream({
       async start(controller) {
-        controller.enqueue(encoder.encode(`__REF__:${JSON.stringify({ refs: refData, remaining, isAdmin: isAdminUser, feedbackId })}\n\n`));
+        controller.enqueue(encoder.encode(`__REF__:${JSON.stringify({ refs: [...retrievedEvidence, ...refData], remaining, isAdmin: isAdminUser, feedbackId })}\n\n`));
         let collectedAnswer = '';
         let answerStatus = 'COMPLETED';
 

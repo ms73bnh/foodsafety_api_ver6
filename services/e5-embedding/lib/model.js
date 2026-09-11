@@ -71,9 +71,18 @@ function getExtractor() {
   return globalThis.__e5PipelinePromise;
 }
 
-export async function embedTexts(texts, inputType) {
+export async function tokenCounts(texts, inputType) {
+  const extractor = await getExtractor();
   const prefix = inputType === 'query' ? 'query: ' : 'passage: ';
-  const prepared = texts.map(text => `${prefix}${String(text).trim().replace(/\s+/g, ' ').slice(0, MAX_TEXT_LENGTH)}`);
+  return texts.map(text => extractor.tokenizer.encode(`${prefix}${String(text).trim().replace(/\s+/g, ' ')}`).length);
+}
+
+export async function embedTexts(texts, inputType, { strictTokens = false } = {}) {
+  const prefix = inputType === 'query' ? 'query: ' : 'passage: ';
+  if (strictTokens && (await tokenCounts(texts, inputType)).some(count => count > 512)) {
+    throw new Error('E5_TOKEN_LIMIT: 512토큰 초과 입력은 분할 후 재요청해야 합니다.');
+  }
+  const prepared = texts.map(text => `${prefix}${String(text).trim().replace(/\s+/g, ' ')}`);
   const extractor = await getExtractor();
   const output = await extractor(prepared, { pooling: 'mean', normalize: true });
   const vectors = output.tolist();
