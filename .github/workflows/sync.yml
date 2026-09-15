@@ -2,24 +2,72 @@ name: 건강기능식품 자동 동기화
 
 on:
   schedule:
-    # 매일 KST 06:00 = UTC 21:00 (전날)
-    - cron: '0 21 * * *'
-  workflow_dispatch: # 수동 실행 버튼도 활성화
+    # 매일 한국 시간 오전 6시
+    # GitHub Actions는 UTC 기준이므로 21시는 KST 다음 날 06시입니다.
+    - cron: "0 21 * * *"
+
+  # GitHub Actions 화면에서 수동 실행 가능
+  workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+
     steps:
       - name: API 동기화 실행
+        env:
+          APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: |
-          echo "동기화 시작: $(date -u)"
-          RESPONSE=$(curl -s -L -w "\n%{http_code}" \
-            "${{ secrets.VERCEL_APP_URL }}/api/sync?cron=true")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n-1)
-          echo "응답 코드: $HTTP_CODE"
-          echo "응답 내용: $BODY"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "동기화 실패! HTTP $HTTP_CODE"
+          set -e
+
+          if [ -z "$APP_URL" ]; then
+            echo "오류: VERCEL_APP_URL Secret이 설정되지 않았습니다."
             exit 1
           fi
+
+          if [ -z "$SYNC_SECRET" ]; then
+            echo "오류: SYNC_SECRET Secret이 설정되지 않았습니다."
+            exit 1
+          fi
+
+          # URL 마지막에 /가 있으면 제거
+          APP_URL="${APP_URL%/}"
+
+          API_URL="${APP_URL}/api/sync?cron=true"
+
+          echo "동기화 시작: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "요청 주소: ${API_URL}"
+
+          RESPONSE=$(
+            curl --silent --show-error --location \
+              --connect-timeout 10 \
+              --max-time 120 \
+              --request POST \
+              --header "Authorization: Bearer ${SYNC_SECRET}" \
+              --header "Content-Type: application/json" \
+              --write-out "\n%{http_code}" \
+              "$API_URL"
+          )
+
+          # 마지막 줄은 HTTP 상태 코드
+          HTTP_CODE=$(printf '%s\n' "$RESPONSE" | tail -n 1)
+
+          # 마지막 줄을 제외한 나머지는 응답 본문
+          BODY=$(printf '%s\n' "$RESPONSE" | sed '$d')
+
+          echo "응답 코드: $HTTP_CODE"
+          echo "응답 본문: $BODY"
+
+          # 모든 2xx 응답을 성공으로 처리
+          if ! [[ "$HTTP_CODE" =~ ^[0-9]+$ ]]; then
+            echo "오류: HTTP 상태 코드를 확인할 수 없습니다."
+            exit 1
+          fi
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "동기화 실패: HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          echo "동기화 성공"
