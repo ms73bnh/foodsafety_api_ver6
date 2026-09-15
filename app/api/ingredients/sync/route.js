@@ -36,15 +36,72 @@ function isContentEqual(val1 = '', val2 = '') {
   return clean1 === clean2;
 }
 
-// HTML 상세 본문에서 구조화 데이터 파싱
+/**
+ * parseFskTitle: 식약처 게시물 제목에서 원료명, 업체명, 인정번호를 정밀 파싱
+ * 예: "연어코연골추출물(종근당건강(주), 제2026-23호)"
+ *     "프로바이오틱스(Lactiplantibacillus plantarum Q180)... 복합물(CKDB-322)(㈜종근당바이오, 제2026-19호)"
+ */
+function parseFskTitle(title = '') {
+  title = title.trim();
+  let ingrName = title;
+  let companyNm = '';
+  let recogNo = '';
+
+  // 1. 인정번호 추출 ("제2026-23호", "2026-23호", "제 2026-23 호" 등)
+  const rm = title.match(/(?:제\s*)?(\d{4}\s*-\s*\d+\s*호)/);
+  if (rm) {
+    recogNo = '제' + rm[1].replace(/\s+/g, '');
+  }
+
+  // 2. 인정번호 위치 기준으로 괄호 매칭 (중첩 괄호 `(주)` 완벽 처리)
+  if (recogNo) {
+    const recogPos = title.search(/(?:제\s*)?\d{4}\s*-\s*\d+\s*호/);
+    if (recogPos !== -1) {
+      let openParenIdx = -1;
+      let depth = 0;
+      for (let i = recogPos - 1; i >= 0; i--) {
+        if (title[i] === ')') depth++;
+        else if (title[i] === '(') {
+          if (depth === 0) { openParenIdx = i; break; }
+          else depth--;
+        }
+      }
+
+      if (openParenIdx !== -1) {
+        ingrName = title.substring(0, openParenIdx).trim();
+        let inside = title.substring(openParenIdx + 1);
+        if (inside.endsWith(')')) inside = inside.slice(0, -1);
+        inside = inside.trim();
+
+        const parts = inside.split(',').map(s => s.trim());
+        const companyParts = parts.filter(p => !/(?:제\s*)?\d{4}\s*-\s*\d+\s*호/.test(p));
+        companyNm = companyParts.join(', ').trim();
+      }
+    }
+  } else {
+    const lastParenMatch = title.match(/^(.*)\(([^)]+)\)$/);
+    if (lastParenMatch) {
+      ingrName = lastParenMatch[1].trim();
+      companyNm = lastParenMatch[2].trim();
+    }
+  }
+
+  ingrName = ingrName.replace(/\s+/g, ' ').trim();
+
+  return { ingrName, companyNm, recogNo };
+}
+
+/**
+ * parseDetailHtml: HTML 상세 본문에서 원료명, 업체명, 기능성내용, 일일섭취량, 섭취시 주의사항 추출
+ */
 function parseDetailHtml(html = '') {
-  // HTML 태그 제거 및 텍스트화
   const text = html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
     .replace(/<br\s*[\/]?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
+    .replace(/<tr\b[^>]*>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -53,73 +110,63 @@ function parseDetailHtml(html = '') {
     .replace(/&#034;/g, '"')
     .replace(/\r\n|\r/g, '\n');
 
+  let name = '';
+  let company = '';
+  let recogNo = '';
   let fnText = '';
   let dailyIntake = '';
   let precautions = '';
 
-  // 1. 기능성 내용 파싱
-  const mFn = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:기능성\s*내용|기능성|Functionality)\s*[:：]?\s*)([\s\S]*?)(?=(?:[○*※\-\u25cb\u25a0]?\s*일일\s*섭취량|[○*※\-\u25cb\u25a0]?\s*섭취량|[○*※\-\u25cb\u25a0]?\s*섭취\s*시\s*주의사항|주의사항|○\s*English|\n\s*※|\n\n\n|$))/i);
-  if (mFn && mFn[1]) {
-    fnText = mFn[1].trim().replace(/\n{2,}/g, '\n');
+  // 원료명 추출
+  const mName = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:원료명|Ingredient\s*name)\s*[:：]\s*)([^\n]+)/i);
+  if (mName && mName[1]) name = mName[1].trim();
+
+  // 업체명 추출
+  const mComp = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:업체명|업체\s*및\s*기관|업체|제조업체|Company(?:\s*or\s*institution)?)\s*[:：]\s*)([^\n]+)/i);
+  if (mComp && mComp[1]) company = mComp[1].trim();
+
+  // 인정번호 추출
+  const mRecog = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:인정번호|Recognition\s*Number)\s*[:：]\s*)([^\n]+)/i);
+  if (mRecog && mRecog[1]) {
+    const rm = mRecog[1].match(/(?:제\s*)?(\d{4}\s*-\s*\d+\s*호)/);
+    if (rm) recogNo = '제' + rm[1].replace(/\s+/g, '');
   }
+
+  // 1. 기능성 내용 파싱
+  const mFn = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:기능성\s*내용|기능성내용|기능성|Functionality(?:\s*of\s*the\s*ingredient)?)\s*[:：]?\s*)([\s\S]*?)(?=(?:[○*※\-\u25cb\u25a0]?\s*일일\s*섭취량|[○*※\-\u25cb\u25a0]?\s*일일섭취량|[○*※\-\u25cb\u25a0]?\s*섭취량|[○*※\-\u25cb\u25a0]?\s*섭취\s*시\s*주의사항|주의사항|※\s*English|○\s*English|\n\s*※|\n\n\n|$))/i);
+  if (mFn && mFn[1]) fnText = mFn[1].trim().replace(/\n{2,}/g, '\n');
 
   // 2. 일일섭취량 파싱
-  const mDaily = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:일일\s*섭취량|섭취량|Daily\s*intake)\s*[:：]?\s*)([\s\S]*?)(?=(?:[○*※\-\u25cb\u25a0]?\s*섭취\s*시\s*주의사항|주의사항|기능성|○\s*English|\n\s*※|\n\n\n|$))/i);
-  if (mDaily && mDaily[1]) {
-    dailyIntake = mDaily[1].trim().replace(/\n{2,}/g, '\n');
-  }
+  const mDaily = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:일일\s*섭취량|일일섭취량|섭취량|Daily\s*intake(?:\s*amount)?)\s*[:：]?\s*)([\s\S]*?)(?=(?:[○*※\-\u25cb\u25a0]?\s*섭취\s*시\s*주의사항|주의사항|기능성|※\s*English|○\s*English|\n\s*※|\n\n\n|$))/i);
+  if (mDaily && mDaily[1]) dailyIntake = mDaily[1].trim().replace(/\n{2,}/g, '\n');
 
   // 3. 섭취 시 주의사항 파싱
-  const mPrec = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:섭취\s*시\s*주의사항|주의사항|Precautions)\s*[:：\n]?\s*)([\s\S]*?)(?=(?:○\s*English|※\s*English|○\s*기타|기타사항|첨부파일|\n\n\n\n|$))/i);
-  if (mPrec && mPrec[1]) {
-    precautions = mPrec[1].trim().replace(/\n{2,}/g, '\n');
-  }
+  const mPrec = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:섭취\s*시\s*주의사항|섭취시\s*주의사항|주의사항|Precautions)\s*[:：\n]?\s*)([\s\S]*?)(?=(?:※\s*English|○\s*English|○\s*기타|기타사항|첨부파일|\n\n\n\n|$))/i);
+  if (mPrec && mPrec[1]) precautions = mPrec[1].trim().replace(/\n{2,}/g, '\n');
 
-  return { fnText, dailyIntake, precautions, rawText: text.trim() };
+  return { name, company, recogNo, fnText, dailyIntake, precautions, rawText: text.trim() };
 }
 
-/**
- * parseFskTitle: 식약처 게시물 제목에서 원료명, 업체명, 인정번호를 파싱
- * 예: "N-아세틸글루코사민(CJ제일제당(주), 제2008-2호)"
- *     "타마린드강황주정추출복합물(TamaFlexⓇ)(콜마비앤에이치(주), 2024-12호)"
- */
-function parseFskTitle(title = '') {
-  let ingrName = title.trim();
-  let companyNm = '';
-  let recogNo = '';
+async function fetchFskPage(page = 1, showCnt = 50, headers) {
+  const LIST_AJAX = 'https://www.foodsafetykorea.go.kr/portal/board/boardList.do';
+  const body = new URLSearchParams({
+    menu_no: '2660',
+    menu_grp: 'MENU_NEW01',
+    bbs_no: 'bbs987',
+    ctgry_no: '1207',
+    ctgry_type_cd: 'CTG_TYPE01',
+    start_idx: String(page),
+    show_cnt: String(showCnt),
+  });
 
-  // 가장 마지막 괄호 그룹에서 업체명+인정번호 추출
-  const m = ingrName.match(/^(.*)\(([^)]+)\)$/);
-  if (m) {
-    ingrName = m[1].trim();
-    const inside = m[2].trim();
-    const parts = inside.split(',').map(s => s.trim());
-    const recogParts = parts.filter(p => /^제?\s*\d{4}\s*-\s*\d+\s*호/.test(p));
-    const companyParts = parts.filter(p => !/^제?\s*\d{4}\s*-\s*\d+\s*호/.test(p));
-    if (recogParts.length > 0) {
-      recogNo = recogParts.map(r => r.replace(/\s+/g, '')).join(', ');
-      companyNm = companyParts.join(', ').trim();
-    } else {
-      companyNm = inside;
-    }
-  }
-
-  // 괄호 없이 제목에 바로 인정번호가 있는 경우 fallback
-  if (!recogNo) {
-    const rm = title.match(/제\s*\d{4}\s*-\s*\d+\s*호/);
-    if (rm) recogNo = rm[0].replace(/\s+/g, '');
-  }
-
-  // '2024-12호' → '제2024-12호' 정규화
-  recogNo = recogNo.replace(/(?<![^\s,])(\d{4}-\d+호)/g, '제$1').replace(/\s+/g, '').trim();
-
-  return { ingrName, companyNm, recogNo };
+  const resp = await fetch(LIST_AJAX, { method: 'POST', headers, body: body.toString() });
+  if (!resp.ok) throw new Error(`식약처 API 응답 오류 (page ${page}): ${resp.status}`);
+  return await resp.json();
 }
 
 export async function POST(req) {
   try {
     const BASE_URL = 'https://www.foodsafetykorea.go.kr';
-    const LIST_AJAX = `${BASE_URL}/portal/board/boardList.do`;
     const DETAIL_URL = `${BASE_URL}/portal/board/boardDetail.do`;
 
     const headers = {
@@ -130,34 +177,21 @@ export async function POST(req) {
     };
 
     // ────────────────────────────────────────────────────────────
-    // STEP 1: 식약처 전체 공시 목록 수집 (전 페이지 순회)
+    // STEP 1: 식약처 전체 공시 목록 병렬 수집
     // ────────────────────────────────────────────────────────────
-    let allFskItems = [];
-    let page = 1;
     const showCnt = 50;
+    const firstJson = await fetchFskPage(1, showCnt, headers);
+    const totalCnt = parseInt(firstJson.total_cnt || '0', 10);
+    const totalPages = Math.ceil(totalCnt / showCnt);
 
-    while (true) {
-      const body = new URLSearchParams({
-        menu_no: '2660',
-        menu_grp: 'MENU_NEW01',
-        bbs_no: 'bbs987',
-        ctgry_no: '1207',
-        ctgry_type_cd: 'CTG_TYPE01',
-        start_idx: String(page),
-        show_cnt: String(showCnt),
-      });
-
-      const resp = await fetch(LIST_AJAX, { method: 'POST', headers, body: body.toString() });
-      if (!resp.ok) throw new Error(`식약처 API 응답 오류 (page ${page}): ${resp.status}`);
-      const json = await resp.json();
-      const items = json.list || [];
-      if (items.length === 0) break;
-
-      allFskItems = allFskItems.concat(items);
-      const totalCnt = parseInt(json.total_cnt || '0', 10);
-      if (allFskItems.length >= totalCnt) break;
-      page++;
+    const pagePromises = [];
+    for (let p = 2; p <= totalPages; p++) {
+      pagePromises.push(fetchFskPage(p, showCnt, headers));
     }
+    const otherPages = await Promise.all(pagePromises);
+
+    let allFskItems = [...(firstJson.list || [])];
+    otherPages.forEach(pj => { allFskItems = allFskItems.concat(pj.list || []); });
 
     // ────────────────────────────────────────────────────────────
     // STEP 2: 인정번호 기준으로 FSK 맵 구성
@@ -177,6 +211,7 @@ export async function POST(req) {
           regDate: (item.cret_dtm || '').substring(0, 10),
           functionalityText: (item.cntnts || item.fnclty_cntnts || '').trim(),
           ntctxtNo: String(item.ntctxt_no || ''),
+          rawTitle: item.titl,
         });
       }
     }
@@ -193,137 +228,159 @@ export async function POST(req) {
     const changeDetails = [];
 
     // ────────────────────────────────────────────────────────────
-    // STEP 4: FSK 기준으로 신규 추가 / 기존 업데이트
+    // STEP 4: 상세 페이지 동시성(Concurrency) 제어 병렬 수집 & DB 1:1 동기화
     // ────────────────────────────────────────────────────────────
-    for (const [recogNo, fskItem] of fskMap.entries()) {
-      let functionalityText = fskItem.functionalityText;
-      let dailyIntake = '';
-      let precautions = '';
-      let detailContent = '';
+    const fskItemsArray = Array.from(fskMap.entries());
+    const CONCURRENCY = 15;
 
-      const existing = dbRecogMap.get(recogNo);
+    for (let i = 0; i < fskItemsArray.length; i += CONCURRENCY) {
+      const batch = fskItemsArray.slice(i, i + CONCURRENCY);
 
-      // 신규이거나 기능성이 없는 경우에만 상세 페이지 호출
-      if (fskItem.ntctxtNo && (!existing || !existing.functionalityText || !functionalityText)) {
-        try {
-          const detUrl = `${DETAIL_URL}?ntctxt_no=${fskItem.ntctxtNo}&menu_no=2660&menu_grp=MENU_NEW01&bbs_no=bbs987`;
-          const detResp = await fetch(detUrl, {
-            headers: { 'User-Agent': headers['User-Agent'], 'Referer': headers['Referer'] }
-          });
-          if (detResp.ok) {
-            const detHtml = await detResp.text();
-            const parsed = parseDetailHtml(detHtml);
-            if (parsed.fnText) functionalityText = parsed.fnText;
-            if (parsed.dailyIntake) dailyIntake = parsed.dailyIntake;
-            if (parsed.precautions) precautions = parsed.precautions;
-            detailContent = parsed.rawText.substring(0, 2000);
+      await Promise.all(batch.map(async ([recogNo, fskItem]) => {
+        let functionalityText = fskItem.functionalityText;
+        let dailyIntake = '';
+        let precautions = '';
+        let detailContent = '';
+        let parsedDetail = null;
+
+        const existing = dbRecogMap.get(recogNo);
+
+        // 상세 내용이 없거나 업체명이 미기재된 경우 상세 페이지 호출
+        const needDetailFetch = fskItem.ntctxtNo && (
+          !existing ||
+          !existing.functionalityText ||
+          !existing.company ||
+          !existing.dailyIntake ||
+          !existing.precautions
+        );
+
+        if (needDetailFetch) {
+          try {
+            const detUrl = `${DETAIL_URL}?ntctxt_no=${fskItem.ntctxtNo}&menu_no=2660&menu_grp=MENU_NEW01&bbs_no=bbs987`;
+            const detResp = await fetch(detUrl, {
+              headers: { 'User-Agent': headers['User-Agent'], 'Referer': headers['Referer'] }
+            });
+            if (detResp.ok) {
+              const detHtml = await detResp.text();
+              parsedDetail = parseDetailHtml(detHtml);
+              if (parsedDetail.fnText) functionalityText = parsedDetail.fnText;
+              if (parsedDetail.dailyIntake) dailyIntake = parsedDetail.dailyIntake;
+              if (parsedDetail.precautions) precautions = parsedDetail.precautions;
+              detailContent = parsedDetail.rawText.substring(0, 2000);
+            }
+          } catch (detailErr) {
+            console.error(`Detail fetch error for ${recogNo}:`, detailErr);
           }
-        } catch (detailErr) {
-          console.error(`Detail fetch error for ${recogNo}:`, detailErr);
-        }
-      }
-
-      if (!existing) {
-        // ── 신규 등록 ──
-        const categories = autoClassify(functionalityText, fskItem.name);
-        await prisma.individual_raw_materials.create({
-          data: {
-            recognitionNumber: recogNo,
-            name: fskItem.name,
-            company: fskItem.company || '',
-            functionalityText: functionalityText || null,
-            dailyIntake: dailyIntake || null,
-            precautions: precautions || null,
-            detailContent: detailContent || null,
-            registeredDate: fskItem.regDate,
-            categories,
-          }
-        });
-
-        await prisma.change_log.create({
-          data: {
-            prdlstReportNo: recogNo,
-            type: 'INGREDIENT_CREATED',
-            changes: JSON.stringify({
-              name: fskItem.name,
-              company: fskItem.company,
-              recogNo,
-              registeredDate: fskItem.regDate,
-              functionalityText,
-              dailyIntake,
-              precautions,
-              action: '신규 개별인정원료 공시 등록',
-            })
-          }
-        });
-
-        addedCount++;
-        changeDetails.push({ recogNo, name: fskItem.name, type: '신규 등록' });
-      } else {
-        // ── 변경 감지 및 업데이트 ──
-        const changedFields = [];
-        const before = {};
-        const after = {};
-
-        if (fskItem.company && existing.company && !isContentEqual(existing.company, fskItem.company)) {
-          changedFields.push('업체명');
-          before.company = existing.company;
-          after.company = fskItem.company;
-        }
-        if (functionalityText && existing.functionalityText && !isContentEqual(existing.functionalityText, functionalityText)) {
-          changedFields.push('기능성 내용');
-          before.functionalityText = existing.functionalityText;
-          after.functionalityText = functionalityText;
-        }
-        if (dailyIntake && existing.dailyIntake && !isContentEqual(existing.dailyIntake, dailyIntake)) {
-          changedFields.push('일일섭취량');
-          before.dailyIntake = existing.dailyIntake;
-          after.dailyIntake = dailyIntake;
-        }
-        if (precautions && existing.precautions && !isContentEqual(existing.precautions, precautions)) {
-          changedFields.push('섭취시 주의사항');
-          before.precautions = existing.precautions;
-          after.precautions = precautions;
         }
 
-        const needUpdate = changedFields.length > 0 ||
-          (!existing.dailyIntake && dailyIntake) ||
-          (!existing.precautions && precautions) ||
-          (!existing.functionalityText && functionalityText);
+        const finalName = parsedDetail?.name || fskItem.name;
+        const finalCompany = parsedDetail?.company || fskItem.company || '';
 
-        if (needUpdate) {
-          await prisma.individual_raw_materials.update({
-            where: { id: existing.id },
+        if (!existing) {
+          // ── 신규 등록 ──
+          const categories = autoClassify(functionalityText, finalName);
+          await prisma.individual_raw_materials.create({
             data: {
-              company: fskItem.company || existing.company,
-              functionalityText: functionalityText || existing.functionalityText,
-              dailyIntake: dailyIntake || existing.dailyIntake,
-              precautions: precautions || existing.precautions,
-              detailContent: detailContent || existing.detailContent,
-              categories: autoClassify(functionalityText || existing.functionalityText, existing.name || fskItem.name),
+              recognitionNumber: recogNo,
+              name: finalName,
+              company: finalCompany,
+              functionalityText: functionalityText || null,
+              dailyIntake: dailyIntake || null,
+              precautions: precautions || null,
+              detailContent: detailContent || null,
+              registeredDate: fskItem.regDate,
+              categories,
             }
           });
 
-          if (changedFields.length > 0) {
-            await prisma.change_log.create({
+          await prisma.change_log.create({
+            data: {
+              prdlstReportNo: recogNo,
+              type: 'INGREDIENT_CREATED',
+              changes: JSON.stringify({
+                name: finalName,
+                company: finalCompany,
+                recogNo,
+                registeredDate: fskItem.regDate,
+                functionalityText,
+                dailyIntake,
+                precautions,
+                action: '신규 개별인정원료 공시 등록',
+              })
+            }
+          });
+
+          addedCount++;
+          changeDetails.push({ recogNo, name: finalName, type: '신규 등록' });
+        } else {
+          // ── 변경 감지 및 업데이트 ──
+          const changedFields = [];
+          const before = {};
+          const after = {};
+
+          if (finalCompany && existing.company && !isContentEqual(existing.company, finalCompany)) {
+            changedFields.push('업체명');
+            before.company = existing.company;
+            after.company = finalCompany;
+          }
+          if (functionalityText && existing.functionalityText && !isContentEqual(existing.functionalityText, functionalityText)) {
+            changedFields.push('기능성 내용');
+            before.functionalityText = existing.functionalityText;
+            after.functionalityText = functionalityText;
+          }
+          if (dailyIntake && existing.dailyIntake && !isContentEqual(existing.dailyIntake, dailyIntake)) {
+            changedFields.push('일일섭취량');
+            before.dailyIntake = existing.dailyIntake;
+            after.dailyIntake = dailyIntake;
+          }
+          if (precautions && existing.precautions && !isContentEqual(existing.precautions, precautions)) {
+            changedFields.push('섭취시 주의사항');
+            before.precautions = existing.precautions;
+            after.precautions = precautions;
+          }
+
+          const needUpdate = changedFields.length > 0 ||
+            (!existing.company && finalCompany) ||
+            (!existing.dailyIntake && dailyIntake) ||
+            (!existing.precautions && precautions) ||
+            (!existing.functionalityText && functionalityText) ||
+            (existing.name !== finalName);
+
+          if (needUpdate) {
+            await prisma.individual_raw_materials.update({
+              where: { id: existing.id },
               data: {
-                prdlstReportNo: recogNo,
-                type: 'INGREDIENT_UPDATED',
-                changes: JSON.stringify({
-                  name: existing.name || fskItem.name,
-                  recogNo,
-                  changedFields,
-                  before,
-                  after,
-                  action: '개별인정원료 항목 변경',
-                })
+                name: finalName,
+                company: finalCompany || existing.company,
+                functionalityText: functionalityText || existing.functionalityText,
+                dailyIntake: dailyIntake || existing.dailyIntake,
+                precautions: precautions || existing.precautions,
+                detailContent: detailContent || existing.detailContent,
+                categories: autoClassify(functionalityText || existing.functionalityText, finalName),
               }
             });
-            updatedCount++;
-            changeDetails.push({ recogNo, name: existing.name, type: '항목 수정', changedFields });
+
+            if (changedFields.length > 0) {
+              await prisma.change_log.create({
+                data: {
+                  prdlstReportNo: recogNo,
+                  type: 'INGREDIENT_UPDATED',
+                  changes: JSON.stringify({
+                    name: finalName,
+                    recogNo,
+                    changedFields,
+                    before,
+                    after,
+                    action: '개별인정원료 항목 변경',
+                  })
+                }
+              });
+              updatedCount++;
+              changeDetails.push({ recogNo, name: finalName, type: '항목 수정', changedFields });
+            }
           }
         }
-      }
+      }));
     }
 
     // ────────────────────────────────────────────────────────────
@@ -374,3 +431,4 @@ export async function POST(req) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+

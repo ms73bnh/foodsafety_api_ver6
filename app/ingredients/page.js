@@ -176,6 +176,13 @@ export default function IngredientsPage() {
     setSyncMsg('');
     try {
       const res = await fetch('/api/ingredients/sync', { method: 'POST' });
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('Sync failed response:', res.status, text.substring(0, 300));
+        alert('식약처 서버 응답 지연 또는 동기화 처리 중 오류가 발생했습니다. (HTTP ' + res.status + ')');
+        return;
+      }
       const json = await res.json();
       if (json.success) {
         setSyncMsg(json.message);
