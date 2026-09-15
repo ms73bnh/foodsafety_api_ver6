@@ -33,14 +33,16 @@ function parseTitle(title = '') {
     recogNo = `제${rm[1].replace(/\s+/g, '')}`;
   }
 
-  const lastBracket = ingrName.match(/^(.*)\(([^()]+)\)$/);
-  if (lastBracket) {
-    const mainPart = lastBracket[1].trim();
-    const inside = lastBracket[2].trim();
-    const insideWithoutRecog = inside.replace(/제?\s*\d{4}\s*-\s*\d+\s*호/g, '').replace(/,\s*$/, '').trim();
-    if (insideWithoutRecog) {
-      companyNm = insideWithoutRecog;
-      ingrName = mainPart;
+  const lastParenIdx = ingrName.lastIndexOf(')');
+  if (lastParenIdx !== -1) {
+    const firstParenIdx = ingrName.indexOf('(');
+    if (firstParenIdx !== -1 && firstParenIdx < lastParenIdx) {
+      const inside = ingrName.substring(firstParenIdx + 1, lastParenIdx).trim();
+      const insideWithoutRecog = inside.replace(/제?\s*\d{4}\s*-\s*\d+\s*호/g, '').replace(/,\s*$/, '').trim();
+      if (insideWithoutRecog) {
+        companyNm = insideWithoutRecog;
+        ingrName = ingrName.substring(0, firstParenIdx).trim();
+      }
     }
   }
 
