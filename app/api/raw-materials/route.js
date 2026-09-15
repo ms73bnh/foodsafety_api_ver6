@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -19,9 +19,6 @@ export async function GET(req) {
         { companyNm: { contains: search, mode: 'insensitive' } },
         { recogNo: { contains: search, mode: 'insensitive' } },
         { functionalityText: { contains: search, mode: 'insensitive' } },
-        { dailyIntake: { contains: search, mode: 'insensitive' } },
-        { precautions: { contains: search, mode: 'insensitive' } },
-        { content: { contains: search, mode: 'insensitive' } },
       ];
     }
 
