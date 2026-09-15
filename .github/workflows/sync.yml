@@ -2,9 +2,9 @@ name: 건강기능식품 자동 동기화
 
 on:
   schedule:
-    # 매일 한국 시간 오전 6시
-    # GitHub Actions는 UTC 기준이므로 21시는 KST 다음 날 06시입니다.
-    - cron: "0 21 * * *"
+    # 매일 한국 시간 오전 8시
+    # GitHub Actions는 UTC 기준이므로 23시는 KST 다음 날 08시입니다.
+    - cron: "0 23 * * *"
 
   # GitHub Actions 화면에서 수동 실행 가능
   workflow_dispatch:

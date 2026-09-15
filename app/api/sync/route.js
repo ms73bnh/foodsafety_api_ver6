@@ -5,23 +5,184 @@ import { normalizeData } from '@/lib/normalizer';
 import { isAdmin } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/audit';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 const API_KEY = process.env.FOOD_API_KEY || 'd753b2c401d242248da5';
 const SERVICE_ID = 'I0030';
 
+/**
+ * 요청 권한 검증 (관리자 세션, SYNC_SECRET Bearer 토큰, 또는 Vercel Cron 헤더/쿼리)
+ */
+function checkAuth(req) {
+  // 1. 관리자 세션 (쿠키 기반)
+  if (isAdmin(req)) return true;
+
+  const authHeader = req.headers.get('authorization');
+  const syncSecret = process.env.SYNC_SECRET;
+
+  // 2. Bearer 토큰 검증 (GitHub Actions 등)
+  if (syncSecret && authHeader === `Bearer ${syncSecret}`) {
+    return true;
+  }
+
+  // 3. Vercel Cron 헤더 또는 ?cron=true
+  const isVercelCron = Boolean(req.headers.get('x-vercel-cron'));
+  const { searchParams } = new URL(req.url);
+  const isCronQuery = searchParams.get('cron') === 'true';
+
+  if (isVercelCron) return true;
+
+  if (isCronQuery) {
+    if (!syncSecret || authHeader === `Bearer ${syncSecret}`) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 정기 자동 동기화 다중 배치 수행 (Cron/GitHub Actions용)
+ */
+async function runCronSync(req) {
+  const { searchParams } = new URL(req.url);
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '1000', 10), 100), 2000);
+  let currentIdx = Math.max(parseInt(searchParams.get('startIdx') || '1', 10), 1);
+  let totalAdded = 0;
+  let totalUpdated = 0;
+  let iterations = 0;
+  const maxIterations = 5; // Vercel 서버리스 런타임 타임아웃 방지 (배치당 최대 5,000건)
+
+  while (iterations < maxIterations) {
+    iterations++;
+    const endIdx = currentIdx + limit - 1;
+    const url = `http://openapi.foodsafetykorea.go.kr/api/${API_KEY}/${SERVICE_ID}/json/${currentIdx}/${endIdx}`;
+
+    let response;
+    try {
+      response = await axios.get(url, { timeout: 45000 });
+    } catch (err) {
+      console.warn(`[Cron Sync] fetch error at ${currentIdx}:`, err.message);
+      break;
+    }
+
+    const data = response?.data?.[SERVICE_ID];
+    const rows = data?.row;
+    if (!rows || rows.length === 0) break;
+
+    const reportNos = rows.map(item => item.PRDLST_REPORT_NO).filter(Boolean);
+    const existingRecords = await prisma.declarations.findMany({
+      where: { prdlstReportNo: { in: reportNos } },
+      select: { prdlstReportNo: true, prmsDt: true, primaryFnclty: true, prdlstNm: true, normalizedFunctionality: true }
+    });
+    const existingMap = new Map(existingRecords.map(r => [r.prdlstReportNo, r]));
+
+    const toCreate = [];
+    const toUpdate = [];
+    const newChangeLogs = [];
+
+    for (const item of rows) {
+      if (!item.PRDLST_REPORT_NO) continue;
+      const existing = existingMap.get(item.PRDLST_REPORT_NO);
+      const normalized = normalizeData(item);
+      const prepareData = {
+        bsshNm: item.BSSH_NM,
+        prdlstNm: item.PRDLST_NM,
+        dispos: item.DISPOS || item.PRDT_SHAP_CD_NM || null,
+        prmsDt: item.PRMS_DT,
+        primaryFnclty: item.PRIMARY_FNCLTY,
+        ntkMthd: item.NTK_MTHD,
+        iftknAtntMatrCn: item.IFTKN_ATNT_MATR_CN,
+        cstdyMthd: item.CSTDY_MTHD,
+        rawmtrlNm: item.RAWMTRL_NM,
+        lcnsNo: item.LCNS_NO || null,
+        pogDaycnt: item.POG_DAYCNT || null,
+        prdlstReportNo: item.PRDLST_REPORT_NO,
+        productionReportStatus: item.PRDCTN_REPORT_STATUS || null,
+        normalizedFunctionality: normalized.normalizedFunctionality,
+        declarationType: normalized.declarationType,
+        customCategories: normalized.customCategories,
+      };
+
+      if (!existing) {
+        toCreate.push(prepareData);
+        totalAdded++;
+      } else {
+        let hasChange = false;
+        const changes = {};
+        if (existing.primaryFnclty !== prepareData.primaryFnclty) {
+          hasChange = true;
+          changes.primaryFnclty = { before: existing.primaryFnclty, after: prepareData.primaryFnclty };
+        }
+        if (existing.prdlstNm !== prepareData.prdlstNm) {
+          hasChange = true;
+          changes.prdlstNm = { before: existing.prdlstNm, after: prepareData.prdlstNm };
+        }
+        if (hasChange) {
+          toUpdate.push({ where: { prdlstReportNo: item.PRDLST_REPORT_NO }, data: prepareData });
+          newChangeLogs.push({
+            prdlstReportNo: item.PRDLST_REPORT_NO,
+            prdlstNm: item.PRDLST_NM,
+            changeType: 'UPDATE',
+            diff: changes,
+          });
+          totalUpdated++;
+        }
+      }
+    }
+
+    if (toCreate.length > 0) {
+      await prisma.declarations.createMany({ data: toCreate, skipDuplicates: true });
+    }
+    for (const updateItem of toUpdate) {
+      await prisma.declarations.update(updateItem);
+    }
+    if (newChangeLogs.length > 0) {
+      await prisma.change_log.createMany({ data: newChangeLogs, skipDuplicates: false });
+    }
+
+    if (rows.length < limit) break;
+    currentIdx += rows.length;
+  }
+
+  await prisma.sync_history.create({
+    data: {
+      status: 'SUCCESS',
+      addedCount: totalAdded,
+      updatedCount: totalUpdated,
+    }
+  });
+
+  return NextResponse.json({
+    success: true,
+    message: `정기 자동 동기화 완료 (추가: ${totalAdded}건, 갱신: ${totalUpdated}건)`,
+    totalAdded,
+    totalUpdated,
+    processedBatches: iterations,
+  });
+}
+
 export async function POST(req) {
   try {
-    // 관리자 권한 검증
-    if (!isAdmin(req)) {
+    if (!checkAuth(req)) {
       return NextResponse.json(
-        { success: false, error: '권한이 없습니다. 관리자만 동기화를 수행할 수 있습니다.' },
+        { success: false, error: '권한이 없습니다. 관리자 또는 인증된 크론만 동기화를 수행할 수 있습니다.' },
         { status: 403 }
       );
     }
 
-    const startTime = Date.now();
+    const { searchParams } = new URL(req.url);
     const body = await req.json().catch(() => ({}));
+    const isCron = searchParams.get('cron') === 'true' || Boolean(req.headers.get('x-vercel-cron')) || body.cron === true;
+
+    // GitHub Actions / 크론 요청 등 수동 지정 인덱스가 없는 크론 요청인 경우 다중 배치 자동 동기화 수행
+    if (isCron && !body.startIdx) {
+      return await runCronSync(req);
+    }
+
+    const startTime = Date.now();
     const startIdx = body.startIdx || 1;
-    // 사용자의 요청에 따라 1000개 유동적으로 처리 가능하도록 유지하되 기본값 설정
     const limit = body.limit || 1000; 
     const endIdx = startIdx + limit - 1;
     const url = `http://openapi.foodsafetykorea.go.kr/api/${API_KEY}/${SERVICE_ID}/json/${startIdx}/${endIdx}`;
@@ -63,7 +224,6 @@ export async function POST(req) {
       return NextResponse.json({ success: true, addedCount: 0, updatedCount: 0, deletedCount: 0, total: 0, info: '해당 범위에 데이터가 없습니다.' });
     }
 
-    // [최적화] 모든 보고번호를 추출하여 한 번에 DB 조회
     const reportNos = rows.map(item => item.PRDLST_REPORT_NO).filter(Boolean);
     const existingRecords = await prisma.declarations.findMany({
       where: { prdlstReportNo: { in: reportNos } },
@@ -71,15 +231,14 @@ export async function POST(req) {
     });
     const dbFetchTime = Date.now();
     
-    // 조회를 위한 Map 생성
     const existingMap = new Map(existingRecords.map(r => [r.prdlstReportNo, r]));
 
     let addedCount = 0;
     let updatedCount = 0;
 
-    const toCreate = [];       // 신규 레코드
-    const toUpdate = [];       // 변경된 레코드
-    const newChangeLogs = [];  // 변경 이력
+    const toCreate = [];
+    const toUpdate = [];
+    const newChangeLogs = [];
 
     for (const item of rows) {
       if (!item.PRDLST_REPORT_NO) continue;
@@ -133,12 +292,10 @@ export async function POST(req) {
       }
     }
 
-    // [벌크 INSERT] 신규 레코드 한 번에 삽입 (skipDuplicates로 충돌 방지)
     if (toCreate.length > 0) {
       await prisma.declarations.createMany({ data: toCreate, skipDuplicates: true });
     }
 
-    // [배치 UPDATE] 변경된 레코드만 처리 (Promise.all로 병렬화)
     if (toUpdate.length > 0) {
       const BATCH_SIZE = 50;
       for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
@@ -149,7 +306,6 @@ export async function POST(req) {
       }
     }
 
-    // [벌크 INSERT] 변경 이력 한 번에 삽입
     if (newChangeLogs.length > 0) {
       await prisma.change_log.createMany({ data: newChangeLogs, skipDuplicates: false });
     }
@@ -165,7 +321,6 @@ export async function POST(req) {
       }
     });
 
-    // 작업 이력 기록
     await writeAuditLog(req, {
       action: 'SYNC_EXECUTE',
       page: '/api/sync',
@@ -190,145 +345,26 @@ export async function POST(req) {
           errorMessage: String(error.message).substring(0, 500)
         }
       });
-      // 작업 이력 오류 기록
       await writeAuditLog(req, {
         action: 'SYNC_EXECUTE_ERROR',
         page: '/api/sync',
-        details: `동기화 실패 (시작 인덱스: ${startIdx}, 범위: ${limit}): ${String(error.message).substring(0, 200)}`
+        details: `동기화 실패: ${String(error.message).substring(0, 200)}`
       });
     } catch(e) { /* ignore */ }
     return NextResponse.json({ success: false, error: String(error.message) }, { status: 500 });
   }
-
 }
 
 export async function GET(req) {
   try {
-    const { searchParams } = new URL(req.url);
-    const isCron = searchParams.get('cron') === 'true' || Boolean(req.headers.get('x-vercel-cron'));
-
-    // 크론 호출이거나 관리자 세션인 경우 자동 동기화 실행 허용
-    if (!isCron && !isAdmin(req)) {
+    if (!checkAuth(req)) {
       return NextResponse.json(
-        { success: false, error: '권한이 없습니다. 관리자 또는 시스템 크론만 실행할 수 있습니다.' },
+        { success: false, error: '권한이 없습니다. 관리자 또는 인증된 크론만 실행할 수 있습니다.' },
         { status: 403 }
       );
     }
 
-    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '1000', 10), 100), 2000);
-    let currentIdx = Math.max(parseInt(searchParams.get('startIdx') || '1', 10), 1);
-    let totalAdded = 0;
-    let totalUpdated = 0;
-    let iterations = 0;
-    const maxIterations = 5; // Vercel 서버리스 런타임 타임아웃 방지 (배치당 최대 5,000건)
-
-    while (iterations < maxIterations) {
-      iterations++;
-      const endIdx = currentIdx + limit - 1;
-      const url = `http://openapi.foodsafetykorea.go.kr/api/${API_KEY}/${SERVICE_ID}/json/${currentIdx}/${endIdx}`;
-
-      let response;
-      try {
-        response = await axios.get(url, { timeout: 45000 });
-      } catch (err) {
-        console.warn(`[Cron Sync] fetch error at ${currentIdx}:`, err.message);
-        break;
-      }
-
-      const data = response?.data?.[SERVICE_ID];
-      const rows = data?.row;
-      if (!rows || rows.length === 0) break;
-
-      const reportNos = rows.map(item => item.PRDLST_REPORT_NO).filter(Boolean);
-      const existingRecords = await prisma.declarations.findMany({
-        where: { prdlstReportNo: { in: reportNos } },
-        select: { prdlstReportNo: true, prmsDt: true, primaryFnclty: true, prdlstNm: true, normalizedFunctionality: true }
-      });
-      const existingMap = new Map(existingRecords.map(r => [r.prdlstReportNo, r]));
-
-      const toCreate = [];
-      const toUpdate = [];
-      const newChangeLogs = [];
-
-      for (const item of rows) {
-        if (!item.PRDLST_REPORT_NO) continue;
-        const existing = existingMap.get(item.PRDLST_REPORT_NO);
-        const normalized = normalizeData(item);
-        const prepareData = {
-          bsshNm: item.BSSH_NM,
-          prdlstNm: item.PRDLST_NM,
-          dispos: item.DISPOS || item.PRDT_SHAP_CD_NM || null,
-          prmsDt: item.PRMS_DT,
-          primaryFnclty: item.PRIMARY_FNCLTY,
-          ntkMthd: item.NTK_MTHD,
-          iftknAtntMatrCn: item.IFTKN_ATNT_MATR_CN,
-          cstdyMthd: item.CSTDY_MTHD,
-          rawmtrlNm: item.RAWMTRL_NM,
-          lcnsNo: item.LCNS_NO || null,
-          pogDaycnt: item.POG_DAYCNT || null,
-          prdlstReportNo: item.PRDLST_REPORT_NO,
-          productionReportStatus: item.PRDCTN_REPORT_STATUS || null,
-          normalizedFunctionality: normalized.normalizedFunctionality,
-          declarationType: normalized.declarationType,
-          customCategories: normalized.customCategories,
-        };
-
-        if (!existing) {
-          toCreate.push(prepareData);
-          totalAdded++;
-        } else {
-          let hasChange = false;
-          const changes = {};
-          if (existing.primaryFnclty !== prepareData.primaryFnclty) {
-            hasChange = true;
-            changes.primaryFnclty = { before: existing.primaryFnclty, after: prepareData.primaryFnclty };
-          }
-          if (existing.prdlstNm !== prepareData.prdlstNm) {
-            hasChange = true;
-            changes.prdlstNm = { before: existing.prdlstNm, after: prepareData.prdlstNm };
-          }
-          if (hasChange) {
-            toUpdate.push({ where: { prdlstReportNo: item.PRDLST_REPORT_NO }, data: prepareData });
-            newChangeLogs.push({
-              prdlstReportNo: item.PRDLST_REPORT_NO,
-              prdlstNm: item.PRDLST_NM,
-              changeType: 'UPDATE',
-              diff: changes,
-            });
-            totalUpdated++;
-          }
-        }
-      }
-
-      if (toCreate.length > 0) {
-        await prisma.declarations.createMany({ data: toCreate, skipDuplicates: true });
-      }
-      for (const updateItem of toUpdate) {
-        await prisma.declarations.update(updateItem);
-      }
-      if (newChangeLogs.length > 0) {
-        await prisma.change_log.createMany({ data: newChangeLogs, skipDuplicates: false });
-      }
-
-      if (rows.length < limit) break;
-      currentIdx += rows.length;
-    }
-
-    await prisma.sync_history.create({
-      data: {
-        status: 'SUCCESS',
-        addedCount: totalAdded,
-        updatedCount: totalUpdated,
-      }
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: `새벽 정기 자동 동기화 완료 (추가: ${totalAdded}건, 갱신: ${totalUpdated}건)`,
-      totalAdded,
-      totalUpdated,
-      processedBatches: iterations,
-    });
+    return await runCronSync(req);
   } catch (error) {
     console.error('Cron Sync Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
