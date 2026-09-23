@@ -1,0 +1,129 @@
+{
+  "generated_at": "2026-09-23T01:01:55.768Z",
+  "pipeline_version": "3.1.0",
+  "summary_metrics": {
+    "total_chunks": 933,
+    "total_documents": 365,
+    "doc_types_count": {
+      "result": 241,
+      "announcement": 109,
+      "member_list": 9,
+      "regulation": 6
+    },
+    "departments_count": {
+      "식품기준과": 100,
+      "영양기능연구과": 57,
+      "건강기능식품정책과": 88,
+      "영양기능연구팀": 83,
+      "건강기능식품기준과": 36,
+      "영양정책과": 1
+    },
+    "committees_count": {
+      "재평가분과": 55,
+      "기능성원료·성분인정및기준·규격분과": 244,
+      "일반분과": 66
+    },
+    "years_count": {
+      "2009": 14,
+      "2010": 10,
+      "2011": 1,
+      "2012": 1,
+      "2013": 1,
+      "2014": 8,
+      "2015": 27,
+      "2016": 39,
+      "2017": 24,
+      "2018": 26,
+      "2019": 33,
+      "2020": 27,
+      "2021": 24,
+      "2022": 14,
+      "2023": 13,
+      "2024": 14,
+      "2025": 24,
+      "2026": 12,
+      "미확인연도": 53
+    },
+    "empty_body_count": 0,
+    "ui_noise_remaining_count": 365,
+    "ui_noise_remaining_ratio": 1,
+    "duplicate_doc_count": 0,
+    "metadata_missing_rate": 0,
+    "metadata_outliers_count": 0,
+    "orphan_child_chunks_count": 0,
+    "invalid_raw_material_names_count": 0,
+    "default_fallback_ratio": 0,
+    "date_parse_failure_count": 0
+  },
+  "duplicate_log": [],
+  "samples": [
+    {
+      "category": "announcement",
+      "document_id": "mfds-committee-33356",
+      "title_raw": "[식품기준과] 2024년 제2회 건강기능식품심의위원회(재평가분과) 개최 알림",
+      "before_raw_chunk": "\n\n\t\n\t\t\n\t\t\n\t\n\t\n\t\n\t\n\n\t\n\t\n\t\t\n\t\t\n\t\n\t\n\t\n\n\t\n\t\n\t\n\t\t\n\t\t\n\t\n\t\n\n\t\n\t\n\t\n\t\n\t\t\n\t\n\n \n \n \n \n\n 식품의약품안전처>정보공개>주요위원회>주요위원회 설치현황>건강기능식품위원회 | 식품의약품안전처 \n\n \n \n\n \n\t \n \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\n\t \n\t \n\t\n\t\n\t\n\t\n\t\n\n\t\n\t\n\t \n\t \n\t\n\t \n\t \n\t \n\t\n\t\n\n \n\n \n\n \n \n \n\n \n \n\t \n\t \n\t\t \n\n\t\t\t  본문 바로가기  \n\t\t\t  주메뉴 바",
+      "after_cleaned_metadata": {
+        "document_id": "mfds-committee-33356",
+        "chunk_id": "mfds-committee-33356-agenda-01-chunk",
+        "document_type": "agenda",
+        "title_normalized": "[식품기준과] 2024년 제2회 건강기능식품심의위원회(재평가분과) 개최 알림",
+        "parent_meeting_id": "meeting-7",
+        "agenda_id": "mfds-committee-33356-agenda-01",
+        "raw_material_name": "심의일정",
+        "decision": null
+      },
+      "after_cleaned_text": "# [식품기준과] 2024년 제2회 건강기능식품심의위원회(재평가분과) 개최 알림\n\n## 안건 1. - 심의일정 : 2024.3.8. ~ 3.14.\n\n- 부모 문서 ID: mfds-committee-33356\n- 안건 ID: mfds-committee-33356-agenda-01\n- 안건 순번: 1\n- 심의 원료명: 심의일정\n- 심의 구분: 신규인정\n- 심의 결과: 원문 세부내용 참조\n- 담당 분과: 재평가분과\n\n## 심의 내용 및 상세\n\n[식품기준과] 2024년 제2회 건강기능식품심의위원회(재평가분과) 개최 알림 > - 심의일정 : 2024.3.8. ~ 3.14."
+    },
+    {
+      "category": "result",
+      "document_id": "mfds-committee-33424",
+      "title_raw": "[식품기준과] 2026년 제2회 건강기능식품심의위원회(재평가분과) 개최/결과 알림",
+      "before_raw_chunk": "\n\n\t\n\t\t\n\t\t\n\t\n\t\n\t\n\t\n\n\t\n\t\n\t\t\n\t\t\n\t\n\t\n\t\n\n\t\n\t\n\t\n\t\t\n\t\t\n\t\n\t\n\n\t\n\t\n\t\n\t\n\t\t\n\t\n\n \n \n \n \n\n 식품의약품안전처>정보공개>주요위원회>주요위원회 설치현황>건강기능식품위원회 | 식품의약품안전처 \n\n \n \n\n \n\t \n \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\n\t \n\t \n\t\n\t\n\t\n\t\n\t\n\n\t\n\t\n\t \n\t \n\t\n\t \n\t \n\t \n\t\n\t\n\n \n\n \n\n \n \n \n\n \n \n\t \n\t \n\t\t \n\n\t\t\t  본문 바로가기  \n\t\t\t  주메뉴 바",
+      "after_cleaned_metadata": {
+        "document_id": "mfds-committee-33424",
+        "chunk_id": "mfds-committee-33424-parent",
+        "document_type": "result",
+        "title_normalized": "[식품기준과] 2026년 제2회 건강기능식품심의위원회(재평가분과) 개최/결과 알림",
+        "parent_meeting_id": "meeting-1",
+        "agenda_id": null,
+        "raw_material_name": null,
+        "decision": null
+      },
+      "after_cleaned_text": "# [[식품기준과] 2026년 제2회 건강기능식품심의위원회(재평가분과) 개최/결과 알림]\n\n- 부모 문서 ID: mfds-committee-33424\n- 회의 식별자: meeting-1\n- 위원회: 건강기능식품심의위원회\n- 분과: 재평가분과\n- 회의 연도: 2026\n- 회의 차수: 제2차\n- 문서 유형: result\n- 담당 부서: 식품기준과\n- 게시일: 2026-08-21\n- 심의 기간: 2026-08-21\n- 원문 URL: https://www.mfds.go.kr/brd/m_532/view.do?seq=33424&srchFr=&srchTo=&srchWord=&srchTp=&itm_seq_1=0&itm_seq_2=0&multi_itm_seq=0&company_cd=&company_nm=&page=1\n\n##"
+    },
+    {
+      "category": "member_list",
+      "document_id": "mfds-committee-33317",
+      "title_raw": "건강기능식품심의위원회 명단",
+      "before_raw_chunk": "\n\n\t\n\t\t\n\t\t\n\t\n\t\n\t\n\t\n\n\t\n\t\n\t\t\n\t\t\n\t\n\t\n\t\n\n\t\n\t\n\t\n\t\t\n\t\t\n\t\n\t\n\n\t\n\t\n\t\n\t\n\t\t\n\t\n\n \n \n \n \n\n 식품의약품안전처>정보공개>주요위원회>주요위원회 설치현황>건강기능식품위원회 | 식품의약품안전처 \n\n \n \n\n \n\t \n \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\n\t \n\t \n\t\n\t\n\t\n\t\n\t\n\n\t\n\t\n\t \n\t \n\t\n\t \n\t \n\t \n\t\n\t\n\n \n\n \n\n \n \n \n\n \n \n\t \n\t \n\t\t \n\n\t\t\t  본문 바로가기  \n\t\t\t  주메뉴 바",
+      "after_cleaned_metadata": {
+        "document_id": "mfds-committee-33317",
+        "chunk_id": "mfds-committee-33317-parent",
+        "document_type": "member_list",
+        "title_normalized": "건강기능식품심의위원회 명단",
+        "parent_meeting_id": "meeting-10",
+        "agenda_id": null,
+        "raw_material_name": null,
+        "decision": null
+      },
+      "after_cleaned_text": "# [건강기능식품심의위원회 명단]\n\n- 부모 문서 ID: mfds-committee-33317\n- 회의 식별자: meeting-10\n- 위원회: 건강기능식품심의위원회\n- 분과: 일반분과\n- 회의 연도: 미확인\n- 회의 차수: 미확인\n- 문서 유형: member_list\n- 담당 부서: 건강기능식품정책과\n- 게시일: 2022-11-16\n- 심의 기간: 2022-11-16\n- 원문 URL: https://www.mfds.go.kr/brd/m_532/view.do?seq=33317&srchFr=&srchTo=&srchWord=&srchTp=&itm_seq_1=0&itm_seq_2=0&multi_itm_seq=0&company_cd=&company_nm=&page=10\n\n## 문서 본문 개요\n\n식품의약품안전처>정보"
+    },
+    {
+      "category": "agenda",
+      "document_id": "mfds-committee-33414",
+      "title_raw": "[영양기능연구과] 199차('26년 제1차) 건강기능식품심의위원회(기능성 원료·성분 인정 및 기준·규격분과, 인체적용시험평가분과) 회의 결과",
+      "before_raw_chunk": "\n\n\t\n\t\t\n\t\t\n\t\n\t\n\t\n\t\n\n\t\n\t\n\t\t\n\t\t\n\t\n\t\n\t\n\n\t\n\t\n\t\n\t\t\n\t\t\n\t\n\t\n\n\t\n\t\n\t\n\t\n\t\t\n\t\n\n \n \n \n \n\n 식품의약품안전처>정보공개>주요위원회>주요위원회 설치현황>건강기능식품위원회 | 식품의약품안전처 \n\n \n \n\n \n\t \n \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\t \n\n\t \n\t \n\t\n\t\n\t\n\t\n\t\n\n\t\n\t\n\t \n\t \n\t\n\t \n\t \n\t \n\t\n\t\n\n \n\n \n\n \n \n \n\n \n \n\t \n\t \n\t\t \n\n\t\t\t  본문 바로가기  \n\t\t\t  주메뉴 바",
+      "after_cleaned_metadata": {
+        "document_id": "mfds-committee-33414",
+        "chunk_id": "mfds-committee-33414-agenda-01-chunk",
+        "document_type": "agenda",
+        "title_normalized": "[영양기능연구과] 199차(2026년 제1차) 건강기능식품심의위원회(기능성원료·성분인정및기준·규격분과, 인체적용시험평가분과) 회의 결과",
+        "parent_meeting_id": "meeting-199",
+        "agenda_id": "mfds-committee-33414-agenda-01",
+        "raw_material_name": "Lactococcus lactis JBK329",
+        "decision": "인정"
+      },
+      "after_cleaned_text": "# [영양기능연구과] 199차(2026년 제1차) 건강기능식품심의위원회(기능성원료·성분인정및기준·규격분과, 인체적용시험평가분과) 회의 결과\n\n## 안건 1. - Lactococcus lactis JBK329 : 인정\n\n- 부모 문서 ID: mfds-committee-33414\n- 안건 ID: mfds-committee-33414-agenda-01\n- 안건 순번: 1\n- 심의 원료명: Lactococcus lactis JBK329\n- 심의 구분: 신규인정\n- 심의 결과: 인정\n- 담당 분과: 기능성원료·성분인정및기준·규격분과\n\n## 심의 내용 및 상세\n\n[영양기능연구과] 199차('26년 제1차) 건강기능식품심의위원회(기능성 원료·성분 인정 및 기준·규격분과, 인체적용시험평가분과) 회의 결과 > - Lacto"
+    }
+  ]
+}
