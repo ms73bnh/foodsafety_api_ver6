@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ensureCommitteeSyncHistoryTables } from '@/lib/committeeSyncHistory';
+import { ensureCommitteeRagV3Tables } from '@/lib/committeeRagV3Migration';
 import { extractAttachmentsFromHtml, extractPdfTextFromUrl, cleanHtmlText } from '@/lib/committeePdf';
 
 export const dynamic = 'force-dynamic';
@@ -256,6 +257,7 @@ export async function POST(req) {
   try {
     const body = await req.json().catch(() => ({}));
     await ensureCommitteeSyncHistoryTables(prisma);
+    await ensureCommitteeRagV3Tables(prisma);
 
     // 전체 페이지 스캔: 기본 40페이지 (전체 회의록 전수 검사)
     const maxPages = Math.min(Math.max(parseInt(body.pages || '40'), 1), 50);

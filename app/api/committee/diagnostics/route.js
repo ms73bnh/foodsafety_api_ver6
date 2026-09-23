@@ -1,11 +1,15 @@
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { auditCommittee } from '@/lib/committeeRag/audit.mjs';
+import { ensureCommitteeRagV3Tables } from '@/lib/committeeRagV3Migration';
+
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
+
 export async function GET(request) {
   if (getCurrentUser(request)?.role !== 'ADMIN') return Response.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
   try {
+    await ensureCommitteeRagV3Tables(prisma);
     const report = await prisma.$transaction(async tx => {
       await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
       return auditCommittee(tx);

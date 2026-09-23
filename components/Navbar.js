@@ -578,8 +578,9 @@ export default function Navbar() {
         }
         .navbar-dropdown-container {
           position: relative;
-          display: inline-block;
-          padding-bottom: 6px;
+          display: inline-flex;
+          align-items: center;
+          height: 36px;
         }
         .navbar-dropdown-menu {
           display: none;

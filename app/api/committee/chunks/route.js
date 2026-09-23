@@ -1,9 +1,13 @@
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { enqueueMeeting } from '@/lib/committeeRag/pipeline.mjs';
+import { ensureCommitteeRagV3Tables } from '@/lib/committeeRagV3Migration';
+
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
+
 export async function GET() {
+  await ensureCommitteeRagV3Tables(prisma);
   const [totalMeetings, chunkedMeetings, totalChunks, embeddedChunks, pendingChunks, failedChunks, pdfChunks, bodyChunks, agendaChunks] = await Promise.all([
     prisma.committee_meetings.count(), prisma.committee_meetings.count({ where: { chunks: { some: { active: true } } } }),
     prisma.committee_chunks.count({ where: { active: true } }),
@@ -14,8 +18,10 @@ export async function GET() {
   ]);
   return Response.json({ totalMeetings, chunkedMeetings, totalChunks, embeddedChunks, pendingChunks, failedChunks, pdfChunks, bodyChunks, agendaChunks, pendingMeetings: totalMeetings - chunkedMeetings, chunkVersion: 3 });
 }
+
 export async function POST(request) {
   if (getCurrentUser(request)?.role !== 'ADMIN') return Response.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
+  await ensureCommitteeRagV3Tables(prisma);
   const body = await request.json().catch(() => ({}));
   if (body.mode === 're-embed') {
     const result = await prisma.committee_ingestion_jobs.updateMany({ where: { status: 'failed' }, data: { status: 'pending', attempts: 0, nextRetryAt: new Date(), error: null } });

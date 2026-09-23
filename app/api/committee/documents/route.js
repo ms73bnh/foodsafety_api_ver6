@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { enqueueMeeting, enqueueCatalog } from '@/lib/committeeRag/pipeline.mjs';
 import { CATEGORIES, DOCUMENT_CATEGORIES } from '@/lib/committeeRag/format.mjs';
+import { ensureCommitteeRagV3Tables } from '@/lib/committeeRagV3Migration';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -9,6 +10,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(request) {
   try {
+    await ensureCommitteeRagV3Tables(prisma);
     const params = new URL(request.url).searchParams;
     const meetingId = Number(params.get('meetingId'));
     const category = params.get('category');
@@ -43,6 +45,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   if (getCurrentUser(request)?.role !== 'ADMIN') return Response.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
+  await ensureCommitteeRagV3Tables(prisma);
   const body = await request.json().catch(() => ({}));
   try {
     if (body.action === 'enqueue') {
