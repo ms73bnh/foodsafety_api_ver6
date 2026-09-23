@@ -23,6 +23,18 @@ export default function CommitteeDocumentsPanel({ admin = false }) {
   const [selected, setSelected] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [audit, setAudit] = useState(null);
+  const [isAdminUser, setIsAdminUser] = useState(admin);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success && json.user?.role === 'ADMIN') {
+          setIsAdminUser(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function checkStorage() {
     setBusy(true);
@@ -112,7 +124,7 @@ export default function CommitteeDocumentsPanel({ admin = false }) {
       <div><span className="eyebrow">심의위원회 자료실</span><h2>원문에서 근거까지</h2><p>게시물과 첨부파일을 분류별로 살펴보고, 표와 청킹 내용을 마크다운으로 내려받으세요.</p></div>
       <Link href="/committee">AI 질의응답으로 돌아가기 →</Link>
     </header>
-    {admin && <div><button disabled={busy} onClick={checkStorage}>DB 청킹·임베딩 실제 저장 상태 확인</button>{audit && <div role="status">
+    {(admin || isAdminUser) && <div><button disabled={busy} onClick={checkStorage}>DB 청킹·임베딩 실제 저장 상태 확인</button>{audit && <div role="status">
       <p>조회 시각: {audit.checkedAt} · 게시물 {audit.meetings ?? '확인 불가'}건 · {audit.migrationRequired ? 'V3 DB 마이그레이션 필요' : 'V3 테이블 존재'}</p>
       <p>{audit.note}</p>
       <table><thead><tr><th>자료 유형</th><th>모델</th><th>상태</th><th>청크</th><th>실제 벡터</th><th>활성 E5 벡터</th></tr></thead><tbody>{audit.chunks.map((row, i) => <tr key={i}><td>{row.type}</td><td>{row.model || '없음'}</td><td>{row.status || '미설정'}</td><td>{row.total}</td><td>{row.storedVectors}</td><td>{row.activeE5Vectors}</td></tr>)}</tbody></table>
@@ -122,7 +134,7 @@ export default function CommitteeDocumentsPanel({ admin = false }) {
     <div className="metrics">
       {[[counts.completed || 0, '검색 가능한 문서'], [counts.review || 0, 'OCR 검토 필요'], [(counts.failed || 0) + (counts.retry || 0), '실패·재시도'], [data?.chunks || 0, '임베딩 완료 표시 청크']].map(([value, label]) => <div key={label}><strong>{data && !error ? value.toLocaleString() : '—'}</strong><span>{label}</span></div>)}
     </div>
-    {admin && <div className="admin-actions"><button disabled={busy} onClick={() => action({ action: 'enqueue' })}>전체 게시물 재수집 등록</button><button disabled={busy} onClick={() => action({ action: 'retry' })}>실패 작업 재시도</button><button disabled={busy} onClick={processNext}>다음 작업 처리</button><span>진행 상황은 서버에 저장됩니다.</span></div>}
+    {(admin || isAdminUser) && <div className="admin-actions"><button disabled={busy} onClick={() => action({ action: 'enqueue' })}>전체 게시물 재수집 등록</button><button disabled={busy} onClick={() => action({ action: 'retry' })}>실패 작업 재시도</button><button disabled={busy} onClick={processNext}>다음 작업 처리</button><span>진행 상황은 서버에 저장됩니다.</span></div>}
     <form className="filters" onSubmit={e => { e.preventDefault(); setPage(1); setQuery(search); }}>
       <label>문서 검색<input value={search} onChange={e => setSearch(e.target.value)} placeholder="게시물 제목 또는 파일명" /></label>
       <label>문서 분류<select value={category} onChange={e => { setPage(1); setCategory(e.target.value); }}><option value="">전체 문서</option>{Object.entries(DOCS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
