@@ -59,12 +59,16 @@ function extractSearchTerms(question = '') {
   const addTerm = (raw) => {
     let term = String(raw || '')
       .replace(/^[\s"'‘“\[\]{}()<>·ㆍ•,.:;!?]+|[\s"'’”\[\]{}()<>·ㆍ•,.:;!?]+$/g, '')
-      .replace(/(관련된?|관련한|에\s*대한|에\s*대해|의|은|는|이|가|을|를|와|과|로|으로|에서)$/g, '')
+      .replace(/(관련된?|관련한|에\s*대한|에\s*대해|이라는|라는|이란|의|은|는|이|가|을|를|와|과|로|으로|에서|인|하고|하며)$/g, '')
       .trim();
     if (!term || term.length < 2 || stopWords.has(term)) return;
     terms.add(term);
     const base = term.replace(/\([^)]*\)/g, '').trim();
     if (base && base.length >= 2 && !stopWords.has(base)) terms.add(base);
+    // Add spacing variation for compound terms (e.g., '군내유의성' <-> '군내 유의성')
+    if (term.includes('군내') && !term.includes(' ')) {
+      terms.add(term.replace('군내', '군내 '));
+    }
   };
 
   const quoted = question.match(/["'‘“]([^"'’”]+)["'’”]/g) || [];
