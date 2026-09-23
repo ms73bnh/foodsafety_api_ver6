@@ -612,9 +612,15 @@ function ManagePageInner() {
          const res = await fetch('/api/sync', {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ startIdx: currentIdx, limit })
+             body: JSON.stringify({ startIdx: currentIdx, limit: Math.min(limit, 500) })
           });
-          const data = await res.json();
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            throw new Error(`서버 응답 오류 (HTTP ${res.status}): ${text.slice(0, 150)}`);
+          }
 
           if (data.success) {
              totalAdded += data.addedCount;
@@ -624,15 +630,15 @@ function ManagePageInner() {
                 keepGoing = false;
                 alert('동기화가 완료되었습니다. 추가: ' + totalAdded + '건, 업데이트: ' + totalUpdated + '건');
              } else {
-                currentIdx += limit;
+                currentIdx += data.fetchedRows || limit;
              }
           } else {
              keepGoing = false;
-             alert('동기화 처리 오류가 발생했습니다.');
+             alert(`동기화 처리 오류가 발생했습니다: ${data.error || '알 수 없는 오류'}`);
           }
       }
     } catch (e) {
-      alert('동기화 처리 오류가 발생했습니다.');
+      alert(`동기화 처리 오류가 발생했습니다: ${e.message}`);
     }
     
     setProgress(null);

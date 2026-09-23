@@ -183,25 +183,25 @@ export async function POST(req) {
 
     const startTime = Date.now();
     const startIdx = body.startIdx || 1;
-    const limit = body.limit || 1000; 
+    const limit = Math.min(body.limit || 500, 1000); 
     const endIdx = startIdx + limit - 1;
     const url = `http://openapi.foodsafetykorea.go.kr/api/${API_KEY}/${SERVICE_ID}/json/${startIdx}/${endIdx}`;
 
     console.log(`[SYNC START] ${startIdx} ~ ${endIdx} (Limit: ${limit})`);
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     let response;
-    let retries = 3;
+    let retries = 2;
     let lastError = null;
 
     while (retries > 0) {
       try {
-        response = await axios.get(url, { timeout: 60000 });
+        response = await axios.get(url, { timeout: 15000 });
         if (response.data) break;
       } catch (err) {
         lastError = err;
         retries--;
         console.warn(`[I0030 Sync] StartIdx: ${startIdx}, Retry left: ${retries}, error: ${err.message}`);
-        if (retries > 0) await delay(3000);
+        if (retries > 0) await delay(1500);
       }
     }
 

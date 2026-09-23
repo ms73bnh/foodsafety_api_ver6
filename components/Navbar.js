@@ -115,8 +115,14 @@ export default function Navbar() {
     let currentIdx = 1, totalAdded = 0, totalUpdated = 0, keepGoing = true;
     try {
       while (keepGoing) {
-        const res = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startIdx: currentIdx, limit: 1000 }) });
-        const data = await res.json();
+        const res = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startIdx: currentIdx, limit: 500 }) });
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error(`서버 응답 오류 (HTTP ${res.status}): ${text.slice(0, 150)}`);
+        }
         if (data.success) {
           totalAdded += data.addedCount; totalUpdated += data.updatedCount;
           if (!data.fetchedRows || data.fetchedRows === 0) { keepGoing = false; alert(`🎉 동기화 완료!\n신규 추가: ${totalAdded}건\n업데이트: ${totalUpdated}건`); }

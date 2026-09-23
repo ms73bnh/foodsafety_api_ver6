@@ -452,7 +452,13 @@ export default function CommitteePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pages: 45, mode: "full" })
       });
-      const json = await res.json();
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        throw new Error(`서버 응답 오류 (HTTP ${res.status}): ${text.slice(0, 150)}`);
+      }
       if (json.success) {
         setSyncMsg(json.message);
         await Promise.all([fetchMeetings(1), fetchAgendas(1)]);
