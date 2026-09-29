@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { formatFormattedText } from '@/lib/normalizer';
 
@@ -45,6 +45,10 @@ export default function IngredientsPage() {
   // CRUD Modal state
   const [modal, setModal] = useState(null); // null | 'create' | 'edit' | 'view' | 'delete'
   const [selected, setSelected] = useState(null);
+  const [officialAnnouncement, setOfficialAnnouncement] = useState(null);
+  const [officialAnnouncementLoading, setOfficialAnnouncementLoading] = useState(false);
+  const [officialAnnouncementError, setOfficialAnnouncementError] = useState('');
+  const officialAnnouncementRequest = useRef(0);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -117,6 +121,30 @@ export default function IngredientsPage() {
   const openView = async (item) => {
     setSelected(item);
     setModal('view');
+    const requestId = ++officialAnnouncementRequest.current;
+    setOfficialAnnouncement(null);
+    setOfficialAnnouncementError('');
+    setOfficialAnnouncementLoading(true);
+    void (async () => {
+      try {
+        const response = await fetch(`/api/ingredients/${item.id}`);
+        const json = await response.json();
+        if (!response.ok || !json.success) {
+          throw new Error(json.error || '식약처 공시 원문을 불러오지 못했습니다.');
+        }
+        if (officialAnnouncementRequest.current === requestId) {
+          setOfficialAnnouncement(json.data);
+        }
+      } catch (announcementError) {
+        if (officialAnnouncementRequest.current === requestId) {
+          setOfficialAnnouncementError(announcementError.message || '식약처 공시 원문을 불러오지 못했습니다.');
+        }
+      } finally {
+        if (officialAnnouncementRequest.current === requestId) {
+          setOfficialAnnouncementLoading(false);
+        }
+      }
+    })();
     setRelatedLoading(true);
     setRelatedProducts([]);
     setRelatedTotal(0);
@@ -134,7 +162,17 @@ export default function IngredientsPage() {
   };
 
   const openDelete = (item) => { setSelected(item); setModal('delete'); };
-  const closeModal = () => { setModal(null); setSelected(null); setError(''); setSuccessMsg(''); setRelatedProducts([]); };
+  const closeModal = () => {
+    officialAnnouncementRequest.current++;
+    setModal(null);
+    setSelected(null);
+    setError('');
+    setSuccessMsg('');
+    setRelatedProducts([]);
+    setOfficialAnnouncement(null);
+    setOfficialAnnouncementError('');
+    setOfficialAnnouncementLoading(false);
+  };
 
   const handleSave = async () => {
     setError(''); setSaving(true);
@@ -440,14 +478,14 @@ export default function IngredientsPage() {
               <div>
                 <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <h2 style={{ fontWeight: 700, fontSize: '1.15rem', color: '#0f172a' }}>{selected.name}</h2>
-                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace' }}>인정번호: {selected.recognitionNumber}</span>
+                    <h2 style={{ fontWeight: 700, fontSize: '1.15rem', color: '#0f172a' }}>{officialAnnouncement?.name || selected.name}</h2>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace' }}>인정번호: {officialAnnouncement?.recogNo || selected.recognitionNumber}</span>
                   </div>
                   <button onClick={closeModal} style={{ background: 'none', border: 'none', fontSize: '1.4rem', cursor: 'pointer', color: '#94a3b8' }}>×</button>
                 </div>
                 <div style={{ padding: '20px 24px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                    {[['등록일/연도', selected.registeredDate], ['업체명', selected.company]].map(([k, v]) => (
+                    {[['등록일/연도', selected.registeredDate], ['업체명', officialAnnouncement?.company || selected.company]].map(([k, v]) => (
                       <div key={k}>
                         <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700, marginBottom: 2, textTransform: 'uppercase' }}>{k}</p>
                         <p style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>{v || '-'}</p>
@@ -465,7 +503,11 @@ export default function IngredientsPage() {
                       })}
                     </div>
                   </div>
-                  {[['기능성 내용', selected.functionalityText], ['일일섭취량', selected.dailyIntake], ['섭취시 주의사항', selected.precautions]].map(([k, v]) => v ? (
+                  {[
+                    ['기능성 내용', officialAnnouncement?.fnText || selected.functionalityText],
+                    ['일일섭취량', officialAnnouncement?.dailyIntake || selected.dailyIntake],
+                    ['섭취시 주의사항', officialAnnouncement?.precautions || selected.precautions],
+                  ].map(([k, v]) => v ? (
                     <div key={k} style={{ marginBottom: 12 }}>
                       <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700, marginBottom: 4, textTransform: 'uppercase' }}>{k}</p>
                       <p style={{ fontSize: '0.84rem', color: '#334155', lineHeight: 1.7, background: '#f8fafc', padding: '10px 14px', borderRadius: 8, whiteSpace: 'pre-line' }}>
@@ -473,6 +515,26 @@ export default function IngredientsPage() {
                       </p>
                     </div>
                   ) : null)}
+
+                  <div style={{ marginTop: 18, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                      <h3 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>식약처 공시 원문</h3>
+                      {officialAnnouncement?.sourceUrl && (
+                        <a href={officialAnnouncement.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', fontSize: '0.75rem', fontWeight: 600, textDecoration: 'none' }}>
+                          식품안전나라 게시물 열기 ↗
+                        </a>
+                      )}
+                    </div>
+                    {officialAnnouncementLoading ? (
+                      <p style={{ padding: 14, color: '#64748b', background: '#f8fafc', borderRadius: 8, fontSize: '0.8rem' }}>식품안전나라에서 원문을 불러오는 중...</p>
+                    ) : officialAnnouncementError ? (
+                      <p role="alert" style={{ padding: 14, color: '#b91c1c', background: '#fef2f2', borderRadius: 8, fontSize: '0.8rem' }}>{officialAnnouncementError}</p>
+                    ) : officialAnnouncement ? (
+                      <pre style={{ margin: 0, padding: 14, color: '#334155', background: '#f8fafc', borderRadius: 8, fontSize: '0.8rem', lineHeight: 1.7, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'inherit' }}>
+                        {officialAnnouncement.rawText}
+                      </pre>
+                    ) : null}
+                  </div>
 
                   {/* 맵핑된 완제품 정보 출력 (declarations) */}
                   <div style={{ marginTop: 20, borderTop: '1px dashed #cbd5e1', paddingTop: 16 }}>
