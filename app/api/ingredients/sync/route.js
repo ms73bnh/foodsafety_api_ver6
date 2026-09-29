@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { CATEGORIES_MASTER } from '@/lib/category_data';
+import { parseFskTitle, parseOfficialIngredientPost } from '@/lib/foodSafetyIngredientAnnouncement';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,110 +42,11 @@ function isContentEqual(val1 = '', val2 = '') {
  * 예: "연어코연골추출물(종근당건강(주), 제2026-23호)"
  *     "프로바이오틱스(Lactiplantibacillus plantarum Q180)... 복합물(CKDB-322)(㈜종근당바이오, 제2026-19호)"
  */
-function parseFskTitle(title = '') {
-  title = title.trim();
-  let ingrName = title;
-  let companyNm = '';
-  let recogNo = '';
-
-  // 1. 인정번호 추출 ("제2026-23호", "2026-23호", "제 2026-23 호" 등)
-  const rm = title.match(/(?:제\s*)?(\d{4}\s*-\s*\d+\s*호)/);
-  if (rm) {
-    recogNo = '제' + rm[1].replace(/\s+/g, '');
-  }
-
-  // 2. 인정번호 위치 기준으로 괄호 매칭 (중첩 괄호 `(주)` 완벽 처리)
-  if (recogNo) {
-    const recogPos = title.search(/(?:제\s*)?\d{4}\s*-\s*\d+\s*호/);
-    if (recogPos !== -1) {
-      let openParenIdx = -1;
-      let depth = 0;
-      for (let i = recogPos - 1; i >= 0; i--) {
-        if (title[i] === ')') depth++;
-        else if (title[i] === '(') {
-          if (depth === 0) { openParenIdx = i; break; }
-          else depth--;
-        }
-      }
-
-      if (openParenIdx !== -1) {
-        ingrName = title.substring(0, openParenIdx).trim();
-        let inside = title.substring(openParenIdx + 1);
-        if (inside.endsWith(')')) inside = inside.slice(0, -1);
-        inside = inside.trim();
-
-        const parts = inside.split(',').map(s => s.trim());
-        const companyParts = parts.filter(p => !/(?:제\s*)?\d{4}\s*-\s*\d+\s*호/.test(p));
-        companyNm = companyParts.join(', ').trim();
-      }
-    }
-  } else {
-    const lastParenMatch = title.match(/^(.*)\(([^)]+)\)$/);
-    if (lastParenMatch) {
-      ingrName = lastParenMatch[1].trim();
-      companyNm = lastParenMatch[2].trim();
-    }
-  }
-
-  ingrName = ingrName.replace(/\s+/g, ' ').trim();
-
-  return { ingrName, companyNm, recogNo };
-}
-
 /**
  * parseDetailHtml: HTML 상세 본문에서 원료명, 업체명, 기능성내용, 일일섭취량, 섭취시 주의사항 추출
  */
 function parseDetailHtml(html = '') {
-  const text = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/<br\s*[\/]?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<tr\b[^>]*>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&#034;/g, '"')
-    .replace(/\r\n|\r/g, '\n');
-
-  let name = '';
-  let company = '';
-  let recogNo = '';
-  let fnText = '';
-  let dailyIntake = '';
-  let precautions = '';
-
-  // 원료명 추출
-  const mName = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:원료명|Ingredient\s*name)\s*[:：]\s*)([^\n]+)/i);
-  if (mName && mName[1]) name = mName[1].trim();
-
-  // 업체명 추출
-  const mComp = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:업체명|업체\s*및\s*기관|업체|제조업체|Company(?:\s*or\s*institution)?)\s*[:：]\s*)([^\n]+)/i);
-  if (mComp && mComp[1]) company = mComp[1].trim();
-
-  // 인정번호 추출
-  const mRecog = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:인정번호|Recognition\s*Number)\s*[:：]\s*)([^\n]+)/i);
-  if (mRecog && mRecog[1]) {
-    const rm = mRecog[1].match(/(?:제\s*)?(\d{4}\s*-\s*\d+\s*호)/);
-    if (rm) recogNo = '제' + rm[1].replace(/\s+/g, '');
-  }
-
-  // 1. 기능성 내용 파싱
-  const mFn = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:기능성\s*내용|기능성내용|기능성|Functionality(?:\s*of\s*the\s*ingredient)?)\s*[:：]?\s*)([\s\S]*?)(?=(?:[○*※\-\u25cb\u25a0]?\s*일일\s*섭취량|[○*※\-\u25cb\u25a0]?\s*일일섭취량|[○*※\-\u25cb\u25a0]?\s*섭취량|[○*※\-\u25cb\u25a0]?\s*섭취\s*시\s*주의사항|주의사항|※\s*English|○\s*English|\n\s*※|\n\n\n|$))/i);
-  if (mFn && mFn[1]) fnText = mFn[1].trim().replace(/\n{2,}/g, '\n');
-
-  // 2. 일일섭취량 파싱
-  const mDaily = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:일일\s*섭취량|일일섭취량|섭취량|Daily\s*intake(?:\s*amount)?)\s*[:：]?\s*)([\s\S]*?)(?=(?:[○*※\-\u25cb\u25a0]?\s*섭취\s*시\s*주의사항|주의사항|기능성|※\s*English|○\s*English|\n\s*※|\n\n\n|$))/i);
-  if (mDaily && mDaily[1]) dailyIntake = mDaily[1].trim().replace(/\n{2,}/g, '\n');
-
-  // 3. 섭취 시 주의사항 파싱
-  const mPrec = text.match(/(?:[○*※\-\u25cb\u25a0]?\s*(?:섭취\s*시\s*주의사항|섭취시\s*주의사항|주의사항|Precautions)\s*[:：\n]?\s*)([\s\S]*?)(?=(?:※\s*English|○\s*English|○\s*기타|기타사항|첨부파일|\n\n\n\n|$))/i);
-  if (mPrec && mPrec[1]) precautions = mPrec[1].trim().replace(/\n{2,}/g, '\n');
-
-  return { name, company, recogNo, fnText, dailyIntake, precautions, rawText: text.trim() };
+  return parseOfficialIngredientPost(html);
 }
 
 async function fetchFskPage(page = 1, showCnt = 50, headers) {
@@ -431,4 +333,3 @@ export async function POST(req) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
-
