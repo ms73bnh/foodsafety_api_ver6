@@ -4,6 +4,7 @@ import { CATEGORIES_MASTER } from '@/lib/category_data';
 import { parseFskTitle, parseOfficialIngredientPost } from '@/lib/foodSafetyIngredientAnnouncement';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 function autoClassify(functionalityText = '', name = '') {
   const matched = [];
@@ -37,14 +38,6 @@ function isContentEqual(val1 = '', val2 = '') {
   return clean1 === clean2;
 }
 
-/**
- * parseFskTitle: 식약처 게시물 제목에서 원료명, 업체명, 인정번호를 정밀 파싱
- * 예: "연어코연골추출물(종근당건강(주), 제2026-23호)"
- *     "프로바이오틱스(Lactiplantibacillus plantarum Q180)... 복합물(CKDB-322)(㈜종근당바이오, 제2026-19호)"
- */
-/**
- * parseDetailHtml: HTML 상세 본문에서 원료명, 업체명, 기능성내용, 일일섭취량, 섭취시 주의사항 추출
- */
 function parseDetailHtml(html = '') {
   return parseOfficialIngredientPost(html);
 }
@@ -61,15 +54,55 @@ async function fetchFskPage(page = 1, showCnt = 50, headers) {
     show_cnt: String(showCnt),
   });
 
-  const resp = await fetch(LIST_AJAX, { method: 'POST', headers, body: body.toString() });
+  const resp = await fetch(LIST_AJAX, {
+    method: 'POST',
+    headers,
+    body: body.toString(),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15000),
+  });
   if (!resp.ok) throw new Error(`식약처 API 응답 오류 (page ${page}): ${resp.status}`);
-  return await resp.json();
+  const json = await resp.json();
+  if (!Array.isArray(json.list)) throw new Error(`식약처 목록 응답 형식이 올바르지 않습니다 (page ${page}).`);
+  return json;
+}
+
+async function fetchFskDetail(ntctxtNo, recogNo, headers) {
+  const detailUrl = new URL('https://www.foodsafetykorea.go.kr/portal/board/boardDetail.do');
+  detailUrl.search = new URLSearchParams({
+    ntctxt_no: ntctxtNo,
+    menu_no: '2660',
+    menu_grp: 'MENU_NEW01',
+    bbs_no: 'bbs987',
+  }).toString();
+
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(detailUrl, {
+        headers,
+        cache: 'no-store',
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!response.ok) throw new Error(`식약처 상세 응답 오류 (${response.status})`);
+
+      const parsed = parseDetailHtml(await response.text());
+      if (!parsed.rawText || (parsed.recogNo && parsed.recogNo !== recogNo)) {
+        throw new Error(`식약처 상세 본문이 비었거나 인정번호가 일치하지 않습니다 (${recogNo}).`);
+      }
+      return parsed;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 500));
+    }
+  }
+
+  throw new Error(`식약처 상세 게시물을 가져오지 못했습니다 (${recogNo}, ${ntctxtNo}): ${lastError?.message || '알 수 없는 오류'}`);
 }
 
 export async function POST(req) {
   try {
     const BASE_URL = 'https://www.foodsafetykorea.go.kr';
-    const DETAIL_URL = `${BASE_URL}/portal/board/boardDetail.do`;
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
@@ -84,6 +117,9 @@ export async function POST(req) {
     const showCnt = 50;
     const firstJson = await fetchFskPage(1, showCnt, headers);
     const totalCnt = parseInt(firstJson.total_cnt || '0', 10);
+    if (!Number.isInteger(totalCnt) || totalCnt < 1 || totalCnt > 10000) {
+      throw new Error(`식약처 공시 게시물 수가 유효하지 않습니다: ${firstJson.total_cnt}`);
+    }
     const totalPages = Math.ceil(totalCnt / showCnt);
 
     const pagePromises = [];
@@ -92,8 +128,15 @@ export async function POST(req) {
     }
     const otherPages = await Promise.all(pagePromises);
 
-    let allFskItems = [...(firstJson.list || [])];
-    otherPages.forEach(pj => { allFskItems = allFskItems.concat(pj.list || []); });
+    const allFskItems = [firstJson, ...otherPages].flatMap(page => page.list);
+    const uniquePostNumbers = new Set(allFskItems.map(item => String(item.ntctxt_no || '')));
+    if (
+      allFskItems.length !== totalCnt ||
+      uniquePostNumbers.size !== totalCnt ||
+      uniquePostNumbers.has('')
+    ) {
+      throw new Error(`식약처 공시 목록이 불완전합니다 (전체 ${totalCnt}건 중 고유 게시물 ${uniquePostNumbers.size}건). 동기화를 중단합니다.`);
+    }
 
     // ────────────────────────────────────────────────────────────
     // STEP 2: 인정번호 기준으로 FSK 맵 구성
@@ -117,6 +160,24 @@ export async function POST(req) {
         });
       }
     }
+    if (fskMap.size !== totalCnt) {
+      throw new Error(`식약처 공시 중 인정번호를 확인할 수 없는 게시물이 있습니다 (${fskMap.size}/${totalCnt}). 동기화를 중단합니다.`);
+    }
+
+    // Always re-read the official post body so edits to existing MFDS announcements are applied.
+    const fskItemsArray = Array.from(fskMap.entries());
+    const detailedFskItems = new Map();
+    const CONCURRENCY = 15;
+    for (let i = 0; i < fskItemsArray.length; i += CONCURRENCY) {
+      const batch = fskItemsArray.slice(i, i + CONCURRENCY);
+      const details = await Promise.all(batch.map(async ([recogNo, fskItem]) => {
+        if (!fskItem.ntctxtNo) {
+          throw new Error(`식약처 공시 게시물 번호가 없습니다 (${recogNo}). 동기화를 중단합니다.`);
+        }
+        return [recogNo, await fetchFskDetail(fskItem.ntctxtNo, recogNo, headers)];
+      }));
+      details.forEach(([recogNo, detail]) => detailedFskItems.set(recogNo, detail));
+    }
 
     // ────────────────────────────────────────────────────────────
     // STEP 3: 현재 DB 전체 조회
@@ -132,49 +193,16 @@ export async function POST(req) {
     // ────────────────────────────────────────────────────────────
     // STEP 4: 상세 페이지 동시성(Concurrency) 제어 병렬 수집 & DB 1:1 동기화
     // ────────────────────────────────────────────────────────────
-    const fskItemsArray = Array.from(fskMap.entries());
-    const CONCURRENCY = 15;
-
     for (let i = 0; i < fskItemsArray.length; i += CONCURRENCY) {
       const batch = fskItemsArray.slice(i, i + CONCURRENCY);
 
       await Promise.all(batch.map(async ([recogNo, fskItem]) => {
-        let functionalityText = fskItem.functionalityText;
-        let dailyIntake = '';
-        let precautions = '';
-        let detailContent = '';
-        let parsedDetail = null;
-
+        const parsedDetail = detailedFskItems.get(recogNo);
+        const functionalityText = parsedDetail.fnText || fskItem.functionalityText;
+        const dailyIntake = parsedDetail.dailyIntake;
+        const precautions = parsedDetail.precautions;
+        const detailContent = parsedDetail.rawText;
         const existing = dbRecogMap.get(recogNo);
-
-        // 상세 내용이 없거나 업체명이 미기재된 경우 상세 페이지 호출
-        const needDetailFetch = fskItem.ntctxtNo && (
-          !existing ||
-          !existing.functionalityText ||
-          !existing.company ||
-          !existing.dailyIntake ||
-          !existing.precautions
-        );
-
-        if (needDetailFetch) {
-          try {
-            const detUrl = `${DETAIL_URL}?ntctxt_no=${fskItem.ntctxtNo}&menu_no=2660&menu_grp=MENU_NEW01&bbs_no=bbs987`;
-            const detResp = await fetch(detUrl, {
-              headers: { 'User-Agent': headers['User-Agent'], 'Referer': headers['Referer'] }
-            });
-            if (detResp.ok) {
-              const detHtml = await detResp.text();
-              parsedDetail = parseDetailHtml(detHtml);
-              if (parsedDetail.fnText) functionalityText = parsedDetail.fnText;
-              if (parsedDetail.dailyIntake) dailyIntake = parsedDetail.dailyIntake;
-              if (parsedDetail.precautions) precautions = parsedDetail.precautions;
-              detailContent = parsedDetail.rawText.substring(0, 2000);
-            }
-          } catch (detailErr) {
-            console.error(`Detail fetch error for ${recogNo}:`, detailErr);
-          }
-        }
-
         const finalName = parsedDetail?.name || fskItem.name;
         const finalCompany = parsedDetail?.company || fskItem.company || '';
 
@@ -240,12 +268,16 @@ export async function POST(req) {
             before.precautions = existing.precautions;
             after.precautions = precautions;
           }
+          if (detailContent && existing.detailContent !== detailContent) {
+            changedFields.push('공시 원문');
+          }
 
           const needUpdate = changedFields.length > 0 ||
             (!existing.company && finalCompany) ||
             (!existing.dailyIntake && dailyIntake) ||
             (!existing.precautions && precautions) ||
             (!existing.functionalityText && functionalityText) ||
+            existing.detailContent !== detailContent ||
             (existing.name !== finalName);
 
           if (needUpdate) {
