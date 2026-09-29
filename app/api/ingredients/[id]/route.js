@@ -70,7 +70,7 @@ async function findAnnouncementNumber(recognitionNumber, headers) {
   return matchedPost?.ntctxt_no ? String(matchedPost.ntctxt_no) : null;
 }
 
-async function fetchOfficialAnnouncement(ntctxtNo, headers) {
+async function fetchOfficialAnnouncement(ntctxtNo, recognitionNumber, headers) {
   const detailUrl = new URL(FSK_DETAIL_URL);
   detailUrl.search = new URLSearchParams({
     ntctxt_no: ntctxtNo,
@@ -86,7 +86,7 @@ async function fetchOfficialAnnouncement(ntctxtNo, headers) {
   });
   if (!response.ok) throw new Error(`식약처 공시 원문 응답 오류: ${response.status}`);
 
-  const parsed = parseOfficialIngredientPost(await response.text());
+  const parsed = parseOfficialIngredientPost(await response.text(), recognitionNumber);
   return { ...parsed, sourceUrl: detailUrl.toString() };
 }
 
@@ -220,7 +220,7 @@ export async function GET(_req, { params }) {
       return NextResponse.json({ success: false, error: '식약처 공시 게시물을 찾을 수 없습니다.' }, { status: 404 });
     }
 
-    const announcement = await fetchOfficialAnnouncement(ntctxtNo, headers);
+    const announcement = await fetchOfficialAnnouncement(ntctxtNo, material.recognitionNumber, headers);
     if (announcement.recogNo && announcement.recogNo !== material.recognitionNumber) {
       throw new Error('식약처 원문 인정번호가 조회한 원료와 일치하지 않습니다.');
     }
