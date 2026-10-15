@@ -183,6 +183,13 @@ export default function Navbar() {
 
   const isAdminUser = user && user.role === 'ADMIN';
   const isSalesOrAboveUser = user && (user.role === 'ADMIN' || user.role === 'SALES');
+  // 로우데이터 추출 메뉴는 설정이 로드되기 전에는 숨김 (명시적으로 허용된 경우만 표시)
+  const isRawMenuVisible = (key) => {
+    if (!user) return false;
+    if (isAdminUser) return true;
+    const item = Array.isArray(menuConfig) ? menuConfig.find(m => m.key === key) : null;
+    return !!item && item.enabled !== false && Array.isArray(item.visibleTo) && item.visibleTo.includes(user.role);
+  };
 
   const mobileMenuSections = [
     {
@@ -215,6 +222,14 @@ export default function Navbar() {
         isMenuVisible('guidelines') && { href: '/guidelines', label: '기능성 평가 가이드라인', icon: 'fa-book-bookmark', active: pathname === '/guidelines' },
         isMenuVisible('raw-materials') && { href: '/raw-materials', label: '원료별 정보 공시', icon: 'fa-flask-vial', active: pathname === '/raw-materials', color: '#059669' },
         isMenuVisible('committee') && { href: '/committee', label: '심의위원회 회의록 (AI Q&A)', icon: 'fa-robot', active: pathname === '/committee' },
+      ].filter(Boolean),
+    },
+    {
+      title: '로우데이터 추출',
+      items: [
+        isRawMenuVisible('raw-general') && { href: '/raw-data/general', label: '일반식품', icon: 'fa-wheat-awn', active: pathname === '/raw-data/general', color: '#6366f1' },
+        isRawMenuVisible('raw-health') && { href: '/raw-data/health', label: '건강기능식품', icon: 'fa-capsules', active: pathname === '/raw-data/health' },
+        isRawMenuVisible('raw-production') && { href: '/raw-data/production', label: '생산실적', icon: 'fa-industry', active: pathname === '/raw-data/production', color: '#0d9488' },
       ].filter(Boolean),
     },
     {
@@ -340,6 +355,18 @@ export default function Navbar() {
               <Link href="/qna" className={`navbar-item ${pathname === '/qna' ? 'active' : ''}`}>
                 <i className="fa-solid fa-comments" style={{ marginRight: '6px', color: '#0284c7' }}></i>Q&A
               </Link>
+            )}
+            {(isRawMenuVisible('raw-general') || isRawMenuVisible('raw-health') || isRawMenuVisible('raw-production')) && (
+              <div className="navbar-dropdown-container">
+                <span className={`navbar-item dropdown-trigger ${pathname.startsWith('/raw-data') ? 'active' : ''}`} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+                  <i className="fa-solid fa-file-export" style={{ marginRight: '6px' }}></i>로우데이터 추출<i className="fa-solid fa-chevron-down" style={{ marginLeft: '4px', fontSize: '0.65rem' }}></i>
+                </span>
+                <div className="navbar-dropdown-menu">
+                  {isRawMenuVisible('raw-general') && <Link href="/raw-data/general" className="dropdown-link"><i className="fa-solid fa-wheat-awn" style={{ marginRight: '6px', color: '#6366f1' }}></i>일반식품</Link>}
+                  {isRawMenuVisible('raw-health') && <Link href="/raw-data/health" className="dropdown-link"><i className="fa-solid fa-capsules" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>건강기능식품</Link>}
+                  {isRawMenuVisible('raw-production') && <Link href="/raw-data/production" className="dropdown-link"><i className="fa-solid fa-industry" style={{ marginRight: '6px', color: '#0d9488' }}></i>생산실적</Link>}
+                </div>
+              </div>
             )}
             {isAdminUser && (
               <Link href="/manage" className={`navbar-item ${pathname.startsWith('/manage') ? 'active' : ''}`} style={{ fontWeight: 'bold', background: 'rgba(2, 132, 199, 0.06)' }}>

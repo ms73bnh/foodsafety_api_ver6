@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isSalesOrAbove } from '@/lib/auth';
+import { isSalesOrAbove, getCurrentUser } from '@/lib/auth';
+import { hasMenuAccess } from '@/lib/menu-config';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Vercel Pro: 최대 60초
@@ -52,7 +53,7 @@ function buildWhere({ integrated, prdlstReportNo, bsshNm, prdlstNm, prdlstDcnm, 
 
 export async function GET(req) {
   try {
-    if (!isSalesOrAbove(req)) {
+    if (!isSalesOrAbove(req) && !(await hasMenuAccess(getCurrentUser(req), 'raw-general'))) {
       return NextResponse.json(
         { success: false, error: '권한이 없습니다. ADMIN 또는 SALES 권한이 필요합니다.' },
         { status: 403 }

@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
+import { hasMenuAccess } from '@/lib/menu-config';
 
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type') || 'declaration';
     const query = searchParams.get('q') || '';
+
+    const menuKey = type === 'production' ? 'raw-production' : 'raw-health';
+    if (!(await hasMenuAccess(getCurrentUser(req), menuKey))) {
+      return new Response('접근 권한이 없습니다.', { status: 403 });
+    }
 
     const where = {};
     if (query) {

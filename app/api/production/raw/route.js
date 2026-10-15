@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
+import { hasMenuAccess } from '@/lib/menu-config';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req) {
   try {
+    if (!(await hasMenuAccess(getCurrentUser(req), 'raw-production'))) {
+      return NextResponse.json({ success: false, error: '접근 권한이 없습니다.' }, { status: 403 });
+    }
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);

@@ -5,7 +5,6 @@ import RichTextEditor from '@/components/RichTextEditor';
 import CommitteeAiAdminPanel from '@/components/CommitteeAiAdminPanel';
 import CommitteeDocumentsPanel from '@/components/CommitteeDocumentsPanel';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { downloadGeneralExport, getGeneralExportKey } from '@/lib/generalDownload';
 
 const DEFAULT_ROLES = [
   { key: 'ADMIN', label: '관리자', color: '#1d4ed8' },
@@ -36,22 +35,7 @@ function ManagePageInner() {
   const [activeTab, setActiveTab] = useState(() => {
     // SSR 안전: 초기값은 'sync', useEffect에서 쿼리 반영
     return 'sync';
-  }); // sync, raw, rawgeneral, banner, users, audit, notices
-  const [rawSubTab, setRawSubTab] = useState('declarations'); // declarations, production
-  const [rawData, setRawData] = useState([]);
-  const [rawTotal, setRawTotal] = useState(0);
-  const [rawPage, setRawPage] = useState(1);
-  const [rawLoading, setRawLoading] = useState(false);
-  const [rawSearchQuery, setRawSearchQuery] = useState('');
-
-  // 일반식품 RAW 데이터 상태
-  const [rawGeneralData, setRawGeneralData] = useState([]);
-  const [rawGeneralTotal, setRawGeneralTotal] = useState(0);
-  const [rawGeneralPage, setRawGeneralPage] = useState(1);
-  const [rawGeneralLoading, setRawGeneralLoading] = useState(false);
-  const [rawGeneralSearchQuery, setRawGeneralSearchQuery] = useState('');
-  const [rawGeneralExportState, setRawGeneralExportState] = useState({ active: false, message: '' });
-  const [rawGeneralExportResume, setRawGeneralExportResume] = useState({});
+  }); // sync, banner, users, audit, notices, menu, ai
   // 사용자 관리 상태
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -122,6 +106,9 @@ function ManagePageInner() {
   // URL ?tab=users 등으로 직접 탭 진입 처리
   useEffect(() => {
     const tab = searchParams.get('tab');
+    // 로우데이터 탭은 '로우데이터 추출' 메뉴로 이동됨
+    if (tab === 'raw') return router.replace('/raw-data/health');
+    if (tab === 'rawgeneral') return router.replace('/raw-data/general');
     if (tab) setActiveTab(tab);
   }, [searchParams]);
 
@@ -144,33 +131,6 @@ function ManagePageInner() {
       const data = await res.json();
       if (data.success) setBanners(data.data);
     } catch(e) { /* ignore */ }
-  };
-
-  const fetchRawData = async () => {
-    setRawLoading(true);
-    try {
-      const endpoint = rawSubTab === 'declarations' ? '/api/data' : '/api/production/raw';
-      const res = await fetch(`${endpoint}?page=${rawPage}&limit=20&query=${rawSearchQuery}`);
-      const result = await res.json();
-      if (result.success) {
-        setRawData(result.data);
-        setRawTotal(result.total);
-      }
-    } catch (e) { console.error(e); }
-    setRawLoading(false);
-  };
-
-  const fetchRawGeneralData = async () => {
-    setRawGeneralLoading(true);
-    try {
-      const res = await fetch(`/api/data-general?page=${rawGeneralPage}&limit=20&integrated=${rawGeneralSearchQuery}`);
-      const result = await res.json();
-      if (result.success) {
-        setRawGeneralData(result.data);
-        setRawGeneralTotal(result.total);
-      }
-    } catch (e) { console.error(e); }
-    setRawGeneralLoading(false);
   };
 
   // ?�규 API ?�치 ?�수: ?�용삭제?�보 조회
@@ -388,32 +348,6 @@ function ManagePageInner() {
     }
   }, [activeTab, pageLoading, auditPage, auditActionFilter]);
 
-  // RAW ?이삭제변?감시
-  useEffect(() => {
-    if (pageLoading) return;
-    if (activeTab === 'raw') fetchRawData();
-  }, [activeTab, rawPage, rawSubTab, pageLoading]);
-
-  // ?�반?�품 RAW ?�이삭제변�?감시
-  useEffect(() => {
-    if (pageLoading) return;
-    if (activeTab === 'rawgeneral') fetchRawGeneralData();
-  }, [activeTab, rawGeneralPage, pageLoading]);
-
-  // 검삭제?�어
-  const handleRawSearch = (e) => {
-    if (e.key === 'Enter') {
-      setRawPage(1);
-      fetchRawData();
-    }
-  };
-
-  const handleRawGeneralSearch = (e) => {
-    if (e.key === 'Enter') {
-      setRawGeneralPage(1);
-      fetchRawGeneralData();
-    }
-  };
 
   const handleAuditSearch = (e) => {
     if (e.key === 'Enter') {
@@ -646,75 +580,6 @@ function ManagePageInner() {
     fetchLogs();
   };
 
-  const handleRawExport = () => {
-    const type = rawSubTab === 'declarations' ? 'declaration' : 'production';
-    window.location.href = `/api/export-raw?type=${type}&q=${rawSearchQuery}`;
-  };
-
-  const totalGeneralPages = Math.ceil(rawGeneralTotal / 20);
-
-  const handleRawGeneralExport = async () => {
-    if (rawGeneralExportState.active) return;
-
-    const filters = { integrated: rawGeneralSearchQuery, sort: 'prmsDt_desc' };
-    const format = 'xlsx';
-    const key = getGeneralExportKey(filters, format);
-    const resumeOffset = rawGeneralExportResume[key] || 0;
-
-    setRawGeneralExportState({
-      active: true,
-      message: resumeOffset > 0
-        ? `${resumeOffset.toLocaleString()}행부터 이어받는 중...`
-        : 'Excel 다운로드 준비 중...',
-    });
-
-    try {
-      const result = await downloadGeneralExport({
-        filters,
-        format,
-        resumeOffset,
-        onProgress: ({ offset, total, fileIndex }) => {
-          setRawGeneralExportState({
-            active: true,
-            message: `${fileIndex}번째 Excel 파일 다운로드 중 (${offset.toLocaleString()} / ${total.toLocaleString()}행)`,
-          });
-        },
-        onResumeOffset: (offset) => {
-          setRawGeneralExportResume(prev => {
-            if (!offset) {
-              const next = { ...prev };
-              delete next[key];
-              return next;
-            }
-            return { ...prev, [key]: offset };
-          });
-        },
-      });
-
-      setRawGeneralExportState({
-        active: false,
-        message: `${result.fileCount.toLocaleString()}개 Excel 파일, 총 ${result.total.toLocaleString()}행 다운로드를 완료했습니다.`,
-      });
-    } catch (error) {
-      setRawGeneralExportState({
-        active: false,
-        message: `실패 지점이 저장되었습니다. 다시 누르면 이어받습니다. (${error.message})`,
-      });
-      alert(error.message);
-    }
-  };
-
-  // ?�이�?번호 계산 (Raw Data삭제
-  const totalPages = Math.ceil(rawTotal / 20);
-  const getPageNumbers = () => {
-    const pages = [];
-    const maxVisible = 5;
-    let start = Math.max(1, rawPage - Math.floor(maxVisible / 2));
-    let end = Math.min(totalPages, start + maxVisible - 1);
-    if (end - start + 1 < maxVisible) start = Math.max(1, end - maxVisible + 1);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
-  };
 
   // ?�이�?번호 계산 (Audit Logs삭제
   const totalAuditPages = Math.ceil(auditTotal / 20);
@@ -742,7 +607,7 @@ function ManagePageInner() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
          <div>
             <h1 className="title-gradient"><i className="fa-solid fa-gears" style={{marginRight: '12px'}}></i>시스템 관리 센터</h1>
-            <p style={{ color: 'var(--text-muted)' }}>데이터 동기화, 원본 데이터 분석 및 외부 배너 설정을 관리합니다.</p>
+            <p style={{ color: 'var(--text-muted)' }}>데이터 동기화, 사용자 관리 및 외부 배너 설정을 관리합니다.</p>
          </div>
       </div>
 
@@ -750,12 +615,6 @@ function ManagePageInner() {
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', flexWrap: 'wrap' }}>
          <button onClick={() => { setActiveTab('sync'); }} className={`btn ${activeTab === 'sync' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'sync' ? '' : 'transparent', border: 'none', color: activeTab === 'sync' ? '#fff' : 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 600 }}>
             <i className="fa-solid fa-tower-broadcast" style={{marginRight: '8px'}}></i> 동기화 및 로그
-         </button>
-         <button onClick={() => { setActiveTab('raw'); }} className={`btn ${activeTab === 'raw' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'raw' ? '' : 'transparent', border: 'none', color: activeTab === 'raw' ? '#fff' : 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 600 }}>
-            <i className="fa-solid fa-list-check" style={{marginRight: '8px'}}></i> Raw 데이터 보기
-         </button>
-         <button onClick={() => { setActiveTab('rawgeneral'); setRawGeneralPage(1); }} className={`btn ${activeTab === 'rawgeneral' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'rawgeneral' ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent', border: 'none', color: activeTab === 'rawgeneral' ? '#fff' : '#6366f1', fontSize: '0.9rem', fontWeight: 600 }}>
-            <i className="fa-solid fa-wheat-awn" style={{marginRight: '8px'}}></i> 품목제조보고 RAW
          </button>
          <button onClick={() => { setActiveTab('banner'); }} className={`btn ${activeTab === 'banner' ? 'sync-btn' : ''}`} style={{ background: activeTab === 'banner' ? '' : 'transparent', border: 'none', color: activeTab === 'banner' ? '#fff' : 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 600 }}>
             <i className="fa-solid fa-rectangle-ad" style={{marginRight: '8px'}}></i> 배너 관리         </button>
@@ -830,183 +689,6 @@ function ManagePageInner() {
                      </tbody>
                   </table>
                </div>
-            </div>
-         </div>
-      )}
-
-      {/* 2. Raw Data View Tab */}
-      {activeTab === 'raw' && (
-         <div className="animate-fade-in">
-            <div className="glass-panel" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-               <div>
-                  <h3 style={{ color: 'var(--text-color)' }}><i className="fa-solid fa-database" style={{marginRight: '8px', color: 'var(--accent)'}}></i>데이터베이스 전수 조사</h3>
-                  <p style={{ color: 'var(--text-muted)' }}>DB에 저장된 원본 항목들을 확인합니다.</p>
-                  
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                     <button onClick={() => { setRawSubTab('declarations'); setRawPage(1); }} className={`btn ${rawSubTab === 'declarations' ? 'sync-btn' : ''}`} style={{ padding: '6px 16px', fontSize: '0.8rem', background: rawSubTab === 'declarations' ? '' : '#f1f5f9', color: rawSubTab === 'declarations' ? '#fff' : '#64748b' }}>품목제조신고 (I0490)</button>
-                     <button onClick={() => { setRawSubTab('production'); setRawPage(1); }} className={`btn ${rawSubTab === 'production' ? 'sync-btn' : ''}`} style={{ padding: '6px 16px', fontSize: '0.8rem', background: rawSubTab === 'production' ? '' : '#f1f5f9', color: rawSubTab === 'production' ? '#fff' : '#64748b' }}>생산실적보고 (I0310)</button>
-                  </div>
-               </div>
-               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ position: 'relative' }}>
-                     <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.8rem' }}></i>
-                     <input 
-                       type="text" 
-                       placeholder="업체/품목 검색 (Enter)"
-                       value={rawSearchQuery}
-                       onChange={e => setRawSearchQuery(e.target.value)}
-                       onKeyDown={handleRawSearch}
-                       style={{ padding: '8px 12px 8px 32px', fontSize: '0.85rem', width: '200px' }}
-                     />
-                  </div>
-                  <button onClick={handleRawExport} className="btn sync-btn"><i className="fa-solid fa-file-excel" style={{marginRight: '8px'}}></i> Excel 다운로드</button>
-               </div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
-               <div className="table-container" style={{ height: '700px', overflow: 'auto', position: 'relative' }}>
-                  {rawSubTab === 'declarations' ? (
-                     <table style={{ minWidth: '8000px', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-                           <tr style={{ background: '#f8fafc' }}>
-                              <th style={{ width: '60px', left: 0, position: 'sticky', zIndex: 11, background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>번호</th>
-                              <th style={{ width: '220px', left: '60px', position: 'sticky', zIndex: 11, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', borderRight: '2px solid #e2e8f0' }}>업소명(고정)</th>
-                              <th style={{ width: '280px', left: '280px', position: 'sticky', zIndex: 11, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', borderRight: '2px solid #e2e8f0' }}>제품명(고정)</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>품목제조번호</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>허가일자</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>소비기한</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>인허가번호</th>
-                              <th style={{ width: '120px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>제품형태</th>
-                              <th style={{ width: '250px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>주된기능성</th>
-                              <th style={{ width: '300px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>섭취방법</th>
-                              <th style={{ width: '300px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>보관방법</th>
-                              <th style={{ width: '400px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>섭취시주의사항</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>유형(CDNM)</th>
-                              <th style={{ width: '300px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>기준규격</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>고열량저영양</th>
-                              <th style={{ width: '130px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>생산종료</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>어린이기호식품</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>제품형태코드</th>
-                              <th style={{ width: '200px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>포장재질(RAW)</th>
-                              <th style={{ width: '150px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>업종</th>
-                              <th style={{ width: '200px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>최종수정일자</th>
-                              <th style={{ width: '300px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>기능성원료</th>
-                              <th style={{ width: '300px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>기타원재료</th>
-                              <th style={{ width: '200px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>캡슐원재료</th>
-                              <th style={{ width: '200px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>성상방법</th>
-                              <th style={{ width: '200px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: 'var(--accent)' }}>정규화포장</th>
-                              <th style={{ width: '300px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: 'var(--accent)' }}>정규화기능성</th>
-                              <th style={{ width: '300px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: 'var(--accent)' }}>정규화원재료</th>
-                              <th style={{ width: '200px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: 'var(--text-muted)' }}>생성시간</th>
-                              <th style={{ width: '200px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: 'var(--text-muted)' }}>수정시간</th>
-                           </tr>
-                        </thead>
-                     <tbody style={{ background: '#fff' }}>
-                        {rawLoading ? (
-                           <tr><td colSpan="30" style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}><i className="fa-solid fa-spinner fa-spin fa-2xl"></i></td></tr>
-                        ) : rawData.length > 0 ? (
-                           rawData.map((item, idx) => (
-                              <tr key={item.id} className="table-row">
-                                 <td style={{ left: 0, position: 'sticky', background: '#fff', zIndex: 5, color: 'var(--text-muted)', borderBottom: '1px solid #f1f5f9' }}>{(rawPage-1)*20 + idx + 1}</td>
-                                 <td style={{ left: '60px', position: 'sticky', background: '#fff', zIndex: 5, borderRight: '2px solid #f1f5f9', fontWeight: 600, color: 'var(--text-color)', borderBottom: '1px solid #f1f5f9' }}>
-                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.bsshNm}>{item.bsshNm}</div>
-                                 </td>
-                                 <td style={{ left: '280px', position: 'sticky', background: '#fff', zIndex: 5, borderRight: '2px solid #f1f5f9', color: 'var(--accent)', fontWeight: 600, borderBottom: '1px solid #f1f5f9' }}>
-                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.prdlstNm}>{item.prdlstNm}</div>
-                                 </td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.prdlstReportNo}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.prmsDt}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', color: 'var(--accent-secondary)', fontWeight: 700 }}>{item.pogDaycnt || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.lcnsNo || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.dispos}>{item.dispos || '-'}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.primaryFnclty}>{item.primaryFnclty}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.ntkMthd}>{item.ntkMthd}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.cstdyMthd}>{item.cstdyMthd}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.iftknAtntMatrCn}>{item.iftknAtntMatrCn}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.prdlstCdnm || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.stdrStnd}>{item.stdrStnd}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.hiengLntrtDvsNm || '-'}</td>
-                                 <td style={{ textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>{item.production || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.childCrtfcYn || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.prdtShapCdNm || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.frmlcMtrqlt || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.indutyCdNm || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.lastUpdtDtm || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.indvRawmtrlNm}>{item.indvRawmtrlNm}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.etcRawmtrlNm}>{item.etcRawmtrlNm}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.capRawmtrlNm}>{item.capRawmtrlNm}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.frmlcMthd || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', fontWeight: 600, color: 'var(--accent)' }}>{item.normalizedPackaging || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', fontWeight: 600, color: 'var(--accent)' }}>{item.normalizedFunctionality || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', fontWeight: 600, color: 'var(--accent)' }}>{item.normalizedRawMaterials || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{new Date(item.createdAt).toLocaleString()}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{new Date(item.updatedAt).toLocaleString()}</td>
-                              </tr>
-                           ))
-                        ) : (
-                           <tr><td colSpan="30" style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}>데이터가 없습니다.</td></tr>
-                        )}
-                     </tbody>
-                  </table>
-               ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc' }}>
-                           <tr>
-                              <th style={{ padding: '16px' }}>번호</th>
-                              <th style={{ padding: '16px' }}>연도</th>
-                              <th style={{ padding: '16px' }}>품목제조번호</th>
-                              <th style={{ padding: '16px' }}>제품명</th>
-                              <th style={{ padding: '16px' }}>업체명</th>
-                              <th style={{ padding: '16px' }}>생산량(KG)</th>
-                              <th style={{ padding: '16px' }}>품목유형</th>
-                              <th style={{ padding: '16px' }}>생성일자</th>
-                           </tr>
-                        </thead>
-                        <tbody style={{ background: '#fff' }}>
-                           {rawLoading ? (
-                              <tr><td colSpan="8" style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}><i className="fa-solid fa-spinner fa-spin fa-2xl"></i></td></tr>
-                           ) : rawData.length > 0 ? (
-                              rawData.map((item, idx) => (
-                                 <tr key={item.id} className="table-row">
-                                    <td style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>{(rawPage-1)*20 + idx + 1}</td>
-                                    <td style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #f1f5f9', fontWeight: 600 }}>{item.evlYr}년</td>
-                                    <td style={{ padding: '12px', borderBottom: '1px solid #f1f5f9' }}>{item.prdlstReportNo}</td>
-                                    <td style={{ padding: '12px', borderBottom: '1px solid #f1f5f9', color: 'var(--accent)', fontWeight: 600 }}>{item.prdlstNm}</td>
-                                    <td style={{ padding: '12px', borderBottom: '1px solid #f1f5f9' }}>{item.bsshNm}</td>
-                                    <td style={{ padding: '12px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontWeight: 700 }}>{item.prdctnQy?.toLocaleString() || 0}</td>
-                                    <td style={{ padding: '12px', borderBottom: '1px solid #f1f5f9', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{item.hItemNm}</td>
-                                    <td style={{ padding: '12px', borderBottom: '1px solid #f1f5f9', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{new Date(item.createdAt).toLocaleDateString()}</td>
-                                 </tr>
-                              ))
-                           ) : (
-                              <tr><td colSpan="8" style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}>데이터가 없습니다.</td></tr>
-                           )}
-                        </tbody>
-                     </table>
-                  )}
-               </div>
-
-               {totalPages > 0 && (
-                 <div style={{ padding: '16px', background: '#fff', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'center', gap: '8px', alignItems: 'center' }}>
-                   <button onClick={() => setRawPage(1)} className="btn-page" disabled={rawPage === 1} title="처음으로"><i className="fa-solid fa-angles-left"></i></button>
-                   <button onClick={() => setRawPage(p => Math.max(1, p - 1))} className="btn-page" disabled={rawPage === 1} title="이전"><i className="fa-solid fa-angle-left"></i></button>
-                   
-                   {getPageNumbers().map(p => (
-                     <button 
-                       key={p} 
-                       onClick={() => setRawPage(p)} 
-                       className={`btn-page ${rawPage === p ? 'active' : ''}`}
-                     >
-                       {p}
-                     </button>
-                   ))}
-                   
-                   <button onClick={() => setRawPage(p => Math.min(totalPages, p + 1))} className="btn-page" disabled={rawPage === totalPages} title="다음"><i className="fa-solid fa-angle-right"></i></button>
-                   <button onClick={() => setRawPage(totalPages)} className="btn-page" disabled={rawPage === totalPages} title="맨 끝으로"><i className="fa-solid fa-angles-right"></i></button>
-                   
-                   <div style={{ marginLeft: '12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>{rawPage} / {totalPages} 페이지</div>
-                 </div>
-               )}
             </div>
          </div>
       )}
@@ -1340,121 +1022,6 @@ function ManagePageInner() {
                      </tbody>
                   </table>
                </div>
-            </div>
-         </div>
-      )}
-
-      {/* 2-2. 품목제조보고 RAW 데이터 (일반식품 I1250) */}
-      {activeTab === 'rawgeneral' && (
-         <div className="animate-fade-in">
-            <div className="glass-panel" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: '1px solid #ddd6fe' }}>
-               <div>
-                  <h3 style={{ color: '#4c1d95' }}><i className="fa-solid fa-wheat-awn" style={{ marginRight: '8px' }}></i>품목제조보고 RAW 데이터 (일반식품 I1250)</h3>
-                  <p style={{ color: '#5b21b6' }}>DB에 저장된 일반식품 품목제조보고 원본 데이터를 조회합니다. 총 <strong>{rawGeneralTotal.toLocaleString()}</strong>건</p>
-               </div>
-               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ position: 'relative' }}>
-                     <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.8rem' }}></i>
-                     <input
-                       type="text"
-                       placeholder="업체/품목 검색 (Enter)"
-                       value={rawGeneralSearchQuery}
-                       onChange={e => setRawGeneralSearchQuery(e.target.value)}
-                       onKeyDown={handleRawGeneralSearch}
-                       style={{ padding: '8px 12px 8px 32px', fontSize: '0.85rem', width: '220px' }}
-                     />
-                  </div>
-                  <button
-                    onClick={handleRawGeneralExport}
-                    disabled={rawGeneralExportState.active}
-                    className="btn sync-btn"
-                    style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', opacity: rawGeneralExportState.active ? 0.7 : 1 }}
-                  >
-                    <i className={`fa-solid ${rawGeneralExportState.active ? 'fa-spinner fa-spin' : 'fa-file-excel'}`} style={{ marginRight: '8px' }}></i>Excel 다운로드
-                  </button>
-               </div>
-               {rawGeneralExportState.message && (
-                  <div style={{ flexBasis: '100%', padding: '10px 12px', borderRadius: '8px', background: '#fff', border: '1px solid #ddd6fe', color: '#5b21b6', fontSize: '0.85rem' }}>
-                    {rawGeneralExportState.message}
-                  </div>
-               )}
-            </div>
-
-            <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
-               <div className="table-container" style={{ height: '700px', overflow: 'auto', position: 'relative' }}>
-                  <table style={{ minWidth: '2800px', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
-                     <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-                        <tr style={{ background: '#f5f3ff' }}>
-                           <th style={{ width: '60px', left: 0, position: 'sticky', zIndex: 11, background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>번호</th>
-                           <th style={{ width: '200px', left: '60px', position: 'sticky', zIndex: 11, background: '#f5f3ff', borderBottom: '1px solid #ddd6fe', borderRight: '2px solid #ddd6fe' }}>업소명(고정)</th>
-                           <th style={{ width: '250px', left: '260px', position: 'sticky', zIndex: 11, background: '#f5f3ff', borderBottom: '1px solid #ddd6fe', borderRight: '2px solid #ddd6fe', color: '#6366f1' }}>식품명(고정)</th>
-                           <th style={{ width: '160px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>품목제조번호</th>
-                           <th style={{ width: '130px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>허가일자</th>
-                           <th style={{ width: '180px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>소비기한</th>
-                           <th style={{ width: '130px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>품목유형명</th>
-                           <th style={{ width: '120px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>업종</th>
-                           <th style={{ width: '180px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>식품형태</th>
-                           <th style={{ width: '200px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe', color: '#6366f1' }}>포장재질(정규화)</th>
-                           <th style={{ width: '250px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>포장재질(원문)</th>
-                           <th style={{ width: '300px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>용법</th>
-                           <th style={{ width: '200px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>용도</th>
-                           <th style={{ width: '120px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>고열량저영양</th>
-                           <th style={{ width: '120px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>생산종료</th>
-                           <th style={{ width: '130px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe' }}>어린이인증</th>
-                           <th style={{ width: '150px', background: '#f5f3ff', borderBottom: '1px solid #ddd6fe', color: 'var(--text-muted)' }}>최종수정일자</th>
-                        </tr>
-                     </thead>
-                     <tbody style={{ background: '#fff' }}>
-                        {rawGeneralLoading ? (
-                           <tr><td colSpan="17" style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}><i className="fa-solid fa-spinner fa-spin fa-2xl"></i></td></tr>
-                        ) : rawGeneralData.length > 0 ? (
-                           rawGeneralData.map((item, idx) => (
-                              <tr key={item.id} className="table-row">
-                                 <td style={{ left: 0, position: 'sticky', background: '#fff', zIndex: 5, color: 'var(--text-muted)', borderBottom: '1px solid #f1f5f9' }}>{(rawGeneralPage - 1) * 20 + idx + 1}</td>
-                                 <td style={{ left: '60px', position: 'sticky', background: '#fff', zIndex: 5, borderRight: '2px solid #f1f5f9', fontWeight: 600, borderBottom: '1px solid #f1f5f9' }}>
-                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.bsshNm}>{item.bsshNm}</div>
-                                 </td>
-                                 <td style={{ left: '260px', position: 'sticky', background: '#fff', zIndex: 5, borderRight: '2px solid #f1f5f9', color: '#6366f1', fontWeight: 600, borderBottom: '1px solid #f1f5f9' }}>
-                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.prdlstNm}>{item.prdlstNm}</div>
-                                 </td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.prdlstReportNo}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.prmsDt}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', color: '#a855f7', fontWeight: 700 }}>{item.pogDaycnt || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.prdlstDcnm || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', color: 'var(--text-muted)' }}>{item.indutyCdNm || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.dispos}>{item.dispos || '-'}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', color: '#6366f1', fontWeight: 600 }}>{item.normalizedPackaging || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.frmlcMtrqlt}>{item.frmlcMtrqlt || '-'}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.usage}>{item.usage || '-'}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.prpos}>{item.prpos || '-'}</div></td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.hiengLntrtDvsNm || '-'}</td>
-                                 <td style={{ textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>{item.production || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9' }}>{item.childCrtfcYn || '-'}</td>
-                                 <td style={{ borderBottom: '1px solid #f1f5f9', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{item.lastUpdtDtm || '-'}</td>
-                              </tr>
-                           ))
-                        ) : (
-                           <tr><td colSpan="17" style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}>데이터가 없습니다. 먼저 일반식품 동기화를 진행하세요.</td></tr>
-                        )}
-                     </tbody>
-                  </table>
-               </div>
-
-               {totalGeneralPages > 0 && (
-                 <div style={{ padding: '16px', background: '#fff', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'center', gap: '8px', alignItems: 'center' }}>
-                   <button onClick={() => setRawGeneralPage(1)} className="btn-page" disabled={rawGeneralPage === 1} title="처음으로"><i className="fa-solid fa-angles-left"></i></button>
-                   <button onClick={() => setRawGeneralPage(p => Math.max(1, p - 1))} className="btn-page" disabled={rawGeneralPage === 1} title="이전"><i className="fa-solid fa-angle-left"></i></button>
-                   {Array.from({ length: Math.min(5, totalGeneralPages) }, (_, i) => {
-                     const startPage = Math.max(1, rawGeneralPage - 2);
-                     const p = startPage + i;
-                     if (p > totalGeneralPages) return null;
-                     return <button key={p} onClick={() => setRawGeneralPage(p)} className={`btn-page ${rawGeneralPage === p ? 'active' : ''}`}>{p}</button>;
-                   })}
-                   <button onClick={() => setRawGeneralPage(p => Math.min(totalGeneralPages, p + 1))} className="btn-page" disabled={rawGeneralPage === totalGeneralPages} title="다음"><i className="fa-solid fa-angle-right"></i></button>
-                   <button onClick={() => setRawGeneralPage(totalGeneralPages)} className="btn-page" disabled={rawGeneralPage === totalGeneralPages} title="맨 끝으로"><i className="fa-solid fa-angles-right"></i></button>
-                   <div style={{ marginLeft: '12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>{rawGeneralPage} / {totalGeneralPages} 페이지</div>
-                 </div>
-               )}
             </div>
          </div>
       )}
