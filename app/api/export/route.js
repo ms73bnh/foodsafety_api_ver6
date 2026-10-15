@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { getFunctionalityLabelKeys, functionalityCondition } from '@/lib/functionalityFilter';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -69,15 +70,9 @@ export async function GET(req) {
     }
     if (normalizedFunctionality) {
       const keywords = normalizedFunctionality.split(',').map(kw => kw.trim()).filter(kw => kw !== '');
-      keywords.forEach(kw => {
-        const kwProcessed = kw.replace(/\s+/g, "").toLowerCase();
-        conditions.push({ 
-          OR: [
-            { searchFunctionality: { contains: kwProcessed } },
-            { normalizedFunctionality: { contains: kw, mode: 'insensitive' } }
-          ]
-        });
-      });
+      // 선택한 라벨과 정확히 같은 키워드는 항목 단위로 일치 (자유 검색어는 부분 일치)
+      const labelKeys = await getFunctionalityLabelKeys(prisma);
+      keywords.forEach(kw => conditions.push(functionalityCondition(kw, labelKeys)));
     }
     if (normalizedPackaging) {
       conditions.push({
