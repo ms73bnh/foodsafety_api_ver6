@@ -12,6 +12,40 @@ const API_KEY = process.env.FOOD_API_KEY || 'd753b2c401d242248da5';
 const SERVICE_ID = 'I0030';
 
 /**
+ * API 행 → declarations 레코드 (정규화 결과 포함).
+ * 수동 동기화와 크론 동기화가 같은 필드·같은 정규화를 쓰도록 공용으로 둔다.
+ */
+function buildRecord(item, normalized) {
+  return {
+    bsshNm: item.BSSH_NM,
+    prdlstNm: item.PRDLST_NM,
+    dispos: item.DISPOS || item.PRDT_SHAP_CD_NM || null,
+    prmsDt: item.PRMS_DT,
+    primaryFnclty: item.PRIMARY_FNCLTY,
+    ntkMthd: item.NTK_MTHD,
+    iftknAtntMatrCn: item.IFTKN_ATNT_MATR_CN,
+    cstdyMthd: item.CSTDY_MTHD,
+    rawmtrlNm: item.RAWMTRL_NM,
+    lcnsNo: item.LCNS_NO || null,
+    pogDaycnt: item.POG_DAYCNT || null,
+    prdlstCdnm: item.PRDLST_CDNM || null,
+    stdrStnd: item.STDR_STND || null,
+    hiengLntrtDvsNm: item.HIENG_LNTRT_DVS_NM || null,
+    production: item.PRODUCTION || null,
+    childCrtfcYn: item.CHILD_CRTFC_YN || null,
+    prdtShapCdNm: item.PRDT_SHAP_CD_NM || null,
+    frmlcMtrqlt: item.FRMLC_MTRQLT || null,
+    indutyCdNm: item.INDUTY_CD_NM || null,
+    lastUpdtDtm: item.LAST_UPDT_DTM || null,
+    indvRawmtrlNm: item.INDV_RAWMTRL_NM || null,
+    etcRawmtrlNm: item.ETC_RAWMTRL_NM || null,
+    capRawmtrlNm: item.CAP_RAWMTRL_NM || null,
+    frmlcMthd: item.FRMLC_MTHD || null,
+    ...normalized,
+  };
+}
+
+/**
  * 요청 권한 검증 (관리자 세션, SYNC_SECRET Bearer 토큰, 또는 Vercel Cron 헤더/쿼리)
  */
 function checkAuth(req) {
@@ -86,47 +120,21 @@ async function runCronSync(req) {
       if (!item.PRDLST_REPORT_NO) continue;
       const existing = existingMap.get(item.PRDLST_REPORT_NO);
       const normalized = normalizeData(item);
-      const prepareData = {
-        bsshNm: item.BSSH_NM,
-        prdlstNm: item.PRDLST_NM,
-        dispos: item.DISPOS || item.PRDT_SHAP_CD_NM || null,
-        prmsDt: item.PRMS_DT,
-        primaryFnclty: item.PRIMARY_FNCLTY,
-        ntkMthd: item.NTK_MTHD,
-        iftknAtntMatrCn: item.IFTKN_ATNT_MATR_CN,
-        cstdyMthd: item.CSTDY_MTHD,
-        rawmtrlNm: item.RAWMTRL_NM,
-        lcnsNo: item.LCNS_NO || null,
-        pogDaycnt: item.POG_DAYCNT || null,
-        prdlstReportNo: item.PRDLST_REPORT_NO,
-        productionReportStatus: item.PRDCTN_REPORT_STATUS || null,
-        normalizedFunctionality: normalized.normalizedFunctionality,
-        declarationType: normalized.declarationType,
-        customCategories: normalized.customCategories,
-      };
+      const prepareData = buildRecord(item, normalized);
 
       if (!existing) {
-        toCreate.push(prepareData);
+        toCreate.push({ prdlstReportNo: item.PRDLST_REPORT_NO, ...prepareData });
+        newChangeLogs.push({ prdlstReportNo: item.PRDLST_REPORT_NO, type: 'NEW', changes: JSON.stringify({ reason: '신규 품목 보고 등록됨' }) });
         totalAdded++;
       } else {
-        let hasChange = false;
+        // 정규화 규칙이 바뀌어도 반영되도록 정규화 결과도 비교한다
         const changes = {};
-        if (existing.primaryFnclty !== prepareData.primaryFnclty) {
-          hasChange = true;
-          changes.primaryFnclty = { before: existing.primaryFnclty, after: prepareData.primaryFnclty };
+        for (const field of ['primaryFnclty', 'prdlstNm', 'normalizedFunctionality']) {
+          if (existing[field] !== prepareData[field]) changes[field] = { before: existing[field], after: prepareData[field] };
         }
-        if (existing.prdlstNm !== prepareData.prdlstNm) {
-          hasChange = true;
-          changes.prdlstNm = { before: existing.prdlstNm, after: prepareData.prdlstNm };
-        }
-        if (hasChange) {
+        if (Object.keys(changes).length > 0) {
           toUpdate.push({ where: { prdlstReportNo: item.PRDLST_REPORT_NO }, data: prepareData });
-          newChangeLogs.push({
-            prdlstReportNo: item.PRDLST_REPORT_NO,
-            prdlstNm: item.PRDLST_NM,
-            changeType: 'UPDATE',
-            diff: changes,
-          });
+          newChangeLogs.push({ prdlstReportNo: item.PRDLST_REPORT_NO, type: 'UPDATED', changes: JSON.stringify(changes) });
           totalUpdated++;
         }
       }
@@ -135,8 +143,8 @@ async function runCronSync(req) {
     if (toCreate.length > 0) {
       await prisma.declarations.createMany({ data: toCreate, skipDuplicates: true });
     }
-    for (const updateItem of toUpdate) {
-      await prisma.declarations.update(updateItem);
+    for (let i = 0; i < toUpdate.length; i += 50) {
+      await Promise.all(toUpdate.slice(i, i + 50).map(updateItem => prisma.declarations.update(updateItem)));
     }
     if (newChangeLogs.length > 0) {
       await prisma.change_log.createMany({ data: newChangeLogs, skipDuplicates: false });
@@ -246,33 +254,7 @@ export async function POST(req) {
       const existing = existingMap.get(item.PRDLST_REPORT_NO);
       const normalized = normalizeData(item);
 
-      const prepareData = {
-        bsshNm: item.BSSH_NM,
-        prdlstNm: item.PRDLST_NM,
-        dispos: item.DISPOS || item.PRDT_SHAP_CD_NM || null,
-        prmsDt: item.PRMS_DT,
-        primaryFnclty: item.PRIMARY_FNCLTY,
-        ntkMthd: item.NTK_MTHD,
-        iftknAtntMatrCn: item.IFTKN_ATNT_MATR_CN,
-        cstdyMthd: item.CSTDY_MTHD,
-        rawmtrlNm: item.RAWMTRL_NM,
-        lcnsNo: item.LCNS_NO || null,
-        pogDaycnt: item.POG_DAYCNT || null,
-        prdlstCdnm: item.PRDLST_CDNM || null,
-        stdrStnd: item.STDR_STND || null,
-        hiengLntrtDvsNm: item.HIENG_LNTRT_DVS_NM || null,
-        production: item.PRODUCTION || null,
-        childCrtfcYn: item.CHILD_CRTFC_YN || null,
-        prdtShapCdNm: item.PRDT_SHAP_CD_NM || null,
-        frmlcMtrqlt: item.FRMLC_MTRQLT || null,
-        indutyCdNm: item.INDUTY_CD_NM || null, 
-        lastUpdtDtm: item.LAST_UPDT_DTM || null,
-        indvRawmtrlNm: item.INDV_RAWMTRL_NM || null,
-        etcRawmtrlNm: item.ETC_RAWMTRL_NM || null,
-        capRawmtrlNm: item.CAP_RAWMTRL_NM || null,
-        frmlcMthd: item.FRMLC_MTHD || null,
-        ...normalized 
-      };
+      const prepareData = buildRecord(item, normalized);
 
       if (existing) {
         const hasChange = existing.prmsDt !== prepareData.prmsDt || 

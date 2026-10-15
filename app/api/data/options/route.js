@@ -25,58 +25,55 @@ const PACKAGING_WHITELIST = new Set([
   'PTP/블리스터',
 ]);
 
+// 개별인정형 라벨 끝의 승인번호: 대표명(제2009-80호)
+const APPROVAL_LABEL = /\(제\d{4}-\d+호\)$/;
+
 export async function GET() {
   try {
-    // 1. ingredients_data.json 로드
+    // 1. ingredients_data.json 로드 (분류·소분류 사전으로만 사용, 건수는 DB 기준)
     const jsonPath = path.join(process.cwd(), 'ingredients_data.json');
     const jsonData = JSON.parse(await fs.readFile(jsonPath, 'utf8'));
 
-    // 2. DB에서 실제 사용 중인 기능성 목록 추출
-    const functionalitiesRaw = await prisma.declarations.findMany({
-      where: { 
-        normalizedFunctionality: { not: null, not: '' } 
-      },
-      select: { normalizedFunctionality: true },
-      distinct: ['normalizedFunctionality']
+    // 2. DB에서 실제 사용 중인 기능성 라벨과 제품 수 집계
+    //    normalizedFunctionality 는 lib/ingredientNormalizer.mjs 규칙으로 만든 대표명 목록이라
+    //    표기가 달라도 같은 원료는 한 항목으로 모이고, 개별인정형은 "대표명(제YYYY-N호)" 단위다.
+    const grouped = await prisma.declarations.groupBy({
+      by: ['normalizedFunctionality'],
+      where: { normalizedFunctionality: { not: '' } },
+      _count: { _all: true },
     });
-
-    const dbFunctionalities = new Set();
-    functionalitiesRaw.forEach(item => {
-      item.normalizedFunctionality.split(',').forEach(f => {
-        const trimmed = f.trim();
-        if (trimmed) dbFunctionalities.add(trimmed);
+    const counts = new Map();
+    grouped.forEach(row => {
+      row.normalizedFunctionality.split(',').forEach(f => {
+        const label = f.trim();
+        if (label) counts.set(label, (counts.get(label) || 0) + row._count._all);
       });
     });
 
-    // 3. JSON 데이터를 기반으로 정규화된 목록 생성
-    const normalizedItems = [];
-    const normalizedSet = new Set();
+    // 3. 분류: JSON 사전(영양성분/기능성원료 등)에 있으면 그 분류, 승인번호가 붙은 라벨은 개별인정형, 나머지는 기타
+    const toKey = (name) => name.replace(/\s+/g, '').toLowerCase();
+    const knownCategory = new Map();
+    jsonData.categories.forEach(cat => cat.items.forEach(item => knownCategory.set(toKey(item.name), cat.category)));
 
-    jsonData.categories.forEach(cat => {
-      cat.items.forEach(item => {
-        normalizedItems.push({
-          ...item,
-          subcategory: getSubcategory(item.name, item.category)
-        });
-        normalizedSet.add(item.name);
-      });
-    });
+    const normalizedItems = [...counts.entries()]
+      .map(([name, count]) => {
+        const category = knownCategory.get(toKey(name)) || (APPROVAL_LABEL.test(name) ? '개별인정형' : '기타');
+        return { name, count, category, subcategory: getSubcategory(name, category) };
+      })
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko'))
+      .map((item, index) => ({ id: `fn_${index + 1}`, ...item }));
 
-    // 4. DB에는 있으나 JSON 정규화 리스트에는 없는 항목들을 '기타(Others)'로 분류
-    const otherItems = Array.from(dbFunctionalities)
-      .filter(name => !normalizedSet.has(name))
-      .map(name => ({
-        id: `other_${name}`,
-        name,
-        count: 0, // 빈도수 정보 없음
-        category: '기타',
-        subcategory: ''
-      }));
+    const descriptions = new Map(jsonData.categories.map(cat => [cat.category, cat.description]));
+    const categories = ['영양성분', '기능성원료', '개별인정형', '기타']
+      .map(category => ({
+        category,
+        description: descriptions.get(category) || (category === '기타' ? '미분류 성분' : ''),
+        items: normalizedItems.filter(item => item.category === category),
+      }))
+      .filter(cat => cat.items.length > 0);
 
-    // 5. 인기 항목 (Top 20) 추출 (모든 카테고리 합쳐서 빈도수 높은 순)
-    const top20 = [...normalizedItems]
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
+    // 4. 인기 항목 (Top 20)
+    const top20 = normalizedItems.slice(0, 20);
 
     const packagingsRaw = await prisma.declarations.findMany({
       where: { 
@@ -111,12 +108,9 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       functionalities: {
-        all: [...normalizedItems, ...otherItems],
+        all: normalizedItems,
         top20,
-        categories: [
-          ...jsonData.categories,
-          { category: "기타", description: "미분류 성분", items: otherItems }
-        ]
+        categories
       },
       packagings: Array.from(packagings).sort(),
       formulations

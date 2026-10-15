@@ -8,6 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test:committee": "node --test tests/committee-rag.test.mjs",
+    "test:ingredients": "node --test tests/ingredient-normalizer.test.mjs",
+    "ingredients:map": "node scripts/build-ingredient-map.mjs",
+    "ingredients:backfill": "node scripts/backfill-normalization.mjs",
     "committee:worker": "node scripts/committee-worker.mjs",
     "committee:crawl": "node scripts/committee-crawl.mjs",
     "committee:audit": "node scripts/committee-audit.mjs"
